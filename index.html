@@ -2,80 +2,77 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Figma-in-a-tag: Integration Complete</title>
+    <title>Figma-in-a-tag: Persistence Fixed</title>
 </head>
 <body class="p-10">
-    <div>
-        <h1>This was here before.</h1>
-        <p>Try clicking me! I am now editable.</p>
-        <img src="https://i.pinimg.com/736x/45/7b/f5/457bf5498d68c5bd6ead7fba3fd3bc43.jpg" alt="Old Image">
+    <div class="mb-10">
+        <h1 class="text-4xl font-bold">The Scanner (Fixed)</h1>
+        <p class="text-lg text-gray-600">Save this project, open it again, and I will still be clickable.</p>
     </div>
 
     <script>
         (function() {
-            // --- CONSTANTS ---
             const TAILWIND_CDN = 'https://cdn.tailwindcss.com';
             
-            // --- STATE MANAGEMENT ---
+            const OPTIONS = {
+                textSize: ['text-xs', 'text-sm', 'text-base', 'text-lg', 'text-xl', 'text-2xl', 'text-3xl', 'text-4xl', 'text-5xl', 'text-6xl', 'text-7xl', 'text-8xl', 'text-9xl'],
+                fontFamily: ['font-sans', 'font-serif', 'font-mono'],
+                fontWeight: ['font-thin', 'font-extralight', 'font-light', 'font-normal', 'font-medium', 'font-semibold', 'font-bold', 'font-extrabold', 'font-black'],
+                rounded: ['rounded-none', 'rounded-sm', 'rounded', 'rounded-md', 'rounded-lg', 'rounded-xl', 'rounded-2xl', 'rounded-3xl', 'rounded-full'],
+                borderWidth: ['border-0', 'border', 'border-2', 'border-4', 'border-8'],
+                textAlign: ['text-left', 'text-center', 'text-right', 'text-justify'],
+                flexDir: ['flex-row', 'flex-col', 'flex-row-reverse', 'flex-col-reverse'],
+                justify: ['justify-start', 'justify-end', 'justify-center', 'justify-between', 'justify-around', 'justify-evenly'],
+                items: ['items-start', 'items-end', 'items-center', 'items-baseline', 'items-stretch']
+            };
+
             let selectedElement = null;
             let mouseX = 0, mouseY = 0;
 
-            // --- CORE FUNCTION: MAKE ELEMENT INTERACTIVE ---
-            // This applies the "brain" to both new and old elements
+            // --- CORE FIX: RUNTIME BINDING CHECK ---
             function makeEditable(el) {
-                // Prevent double-attaching
-                if (el.dataset.editable === "true") return;
+                // We check a property on the object, NOT the HTML attribute
+                if (el._figma_bound) return; 
+                el._figma_bound = true; 
+
+                // We still set dataset for visual debugging, but don't rely on it for logic
                 el.dataset.editable = "true";
 
-                // Add default visibility if element is totally empty/collapsed
-                // (Optional: helps finding "nuked" empty divs)
                 if (el.tagName === 'DIV' && el.innerHTML.trim() === '') {
                     el.classList.add('min-w-[50px]', 'min-h-[50px]', 'border', 'border-dashed', 'border-gray-300');
                 }
-
+                
                 el.addEventListener('click', (ev) => {
-                    ev.stopPropagation(); // Stop bubbling (don't select parent)
-                    
-                    // Cleanup UI
+                    ev.stopPropagation();
                     const menu = document.getElementById('proto-menu');
                     if (menu) menu.remove();
-
-                    // Deselect previous
-                    if (selectedElement) {
-                        selectedElement.classList.remove('outline', 'outline-2', 'outline-blue-500', 'outline-offset-2');
-                    }
-
-                    // Select new
+                    
+                    if (selectedElement) selectedElement.classList.remove('outline', 'outline-2', 'outline-blue-500', 'outline-offset-2');
+                    
                     selectedElement = el;
                     selectedElement.classList.add('outline', 'outline-2', 'outline-blue-500', 'outline-offset-2');
                 });
             }
 
-            // --- PHASE 1: INITIALIZATION & SCANNING ---
             function initializeEnvironment() {
-                console.log("⚙️ Initializing Environment...");
-                
                 let hasTailwind = false;
                 document.querySelectorAll('script').forEach(s => {
                     if (s.src && s.src.includes('tailwindcss')) hasTailwind = true;
                 });
 
                 if (!hasTailwind) {
-                    console.log("☢️ Nuking styles...");
                     nukeStyles();
                     injectTailwind();
                 }
-
-                // THE SCANNER: Hydrate existing DOM
+                
+                // Always run scan, regardless of Nuke status
                 scanAndHydrate();
             }
 
             function nukeStyles() {
                 document.querySelectorAll('link[rel="stylesheet"], style').forEach(el => el.disabled = true);
                 const allElements = document.body.getElementsByTagName("*");
-                for (let el of allElements) {
-                    el.removeAttribute("style");
-                }
+                for (let el of allElements) el.removeAttribute("style");
                 document.body.removeAttribute("style");
             }
 
@@ -83,7 +80,6 @@
                 const script = document.createElement('script');
                 script.src = TAILWIND_CDN;
                 script.onload = () => {
-                    // Wake up JIT
                     document.body.classList.add('jit-wake-up');
                     setTimeout(() => document.body.classList.remove('jit-wake-up'), 0);
                 };
@@ -91,15 +87,10 @@
             }
 
             function scanAndHydrate() {
-                console.log("🔍 Scanning DOM for pre-existing elements...");
-                // Select everything in body
                 const all = document.body.getElementsByTagName('*');
-                
                 for (let el of all) {
-                    // Filter out our own UI components (scripts, menus, buttons)
-                    if (el.tagName === 'SCRIPT') continue;
-                    if (el.id && el.id.startsWith('proto-')) continue;
-                    
+                    // Filter out UI elements
+                    if (el.tagName === 'SCRIPT' || (el.id && el.id.startsWith('proto-'))) continue;
                     makeEditable(el);
                 }
             }
@@ -107,74 +98,68 @@
             // Run Startup
             initializeEnvironment();
 
+            document.addEventListener('mousemove', (e) => { mouseX = e.clientX; mouseY = e.clientY; });
 
-            // --- HELPER: MOUSE TRACKING ---
-            document.addEventListener('mousemove', (e) => {
-                mouseX = e.clientX;
-                mouseY = e.clientY;
-            });
-
-            // --- TAILWIND CLASS MANAGER (Logic unchanged) ---
             const TwManager = {
                 patterns: {
-                    width: /w-\S+/, height: /h-\S+/, minWidth: /min-w-\S+/, minHeight: /min-h-\S+/,
-                    maxWidth: /max-w-\S+/, maxHeight: /max-h-\S+/, padding: /p[axylrbt]?-\S+/, margin: /m[axylrbt]?-\S+/,
-                    bgColor: /bg-\S+/, textColor: /text-(?!xs|sm|base|lg|xl|\dxl)\S+/, textSize: /text-(xs|sm|base|lg|xl|\dxl|\[\d+px\])/,
-                    font: /font-\S+/, rounded: /rounded-\S*/, border: /border-\S*/, flexDir: /flex-(row|col)\S*/,
-                    justify: /justify-\S+/, items: /items-\S+/, textAlign: /text-(left|center|right|justify)/
+                    width: /w-\S+/, height: /h-\S+/, 
+                    minWidth: /min-w-\S+/, minHeight: /min-h-\S+/,
+                    maxWidth: /max-w-\S+/, maxHeight: /max-h-\S+/, 
+                    padding: /p[axylrbt]?-\S+/, margin: /m[axylrbt]?-\S+/,
+                    bgColor: /bg-\S+/, 
+                    textColor: /text-(?!xs|sm|base|lg|xl|\dxl|left|center|right|justify)\S+/, 
+                    textSize: /text-(xs|sm|base|lg|xl|\d+xl)/,
+                    fontFamily: /font-(sans|serif|mono)/,
+                    fontWeight: /font-(thin|extralight|light|normal|medium|semibold|bold|extrabold|black)/,
+                    rounded: /rounded-\S*/, 
+                    borderWidth: /border-(0|2|4|8)|border(?!\-)/,
+                    flexDir: /flex-(row|col)\S*/,
+                    justify: /justify-\S+/, items: /items-\S+/, 
+                    textAlign: /text-(left|center|right|justify)/
                 },
                 getValue: (el, category) => {
                     const match = el.className.match(TwManager.patterns[category]);
+                    if (category === 'borderWidth' && !match && el.classList.contains('border')) return 'border';
                     return match ? match[0] : '';
                 },
                 update: (el, category, newValue) => {
                     const oldMatch = el.className.match(TwManager.patterns[category]);
                     if (oldMatch) el.classList.remove(oldMatch[0]);
+                    else if (category === 'borderWidth' && el.classList.contains('border')) el.classList.remove('border');
                     if (newValue && newValue.trim() !== '') el.classList.add(newValue.trim());
                 }
             };
 
-            // --- UI: MENU CREATION ---
             function createMenu(x, y, content) {
                 const existing = document.getElementById('proto-menu');
                 if (existing) existing.remove();
-
                 const menu = document.createElement('div');
                 menu.id = 'proto-menu';
-                menu.className = `fixed z-[2147483647] bg-white border border-gray-200 shadow-2xl rounded-lg flex flex-col min-w-[220px] p-3 font-mono text-xs`;
+                menu.className = `fixed z-[2147483647] bg-white border border-gray-200 shadow-2xl rounded-lg flex flex-col min-w-[240px] p-3 font-mono text-xs max-h-[80vh] overflow-y-auto`;
                 menu.style.top = `${y}px`;
                 menu.style.left = `${x}px`;
-
                 content.forEach(item => menu.appendChild(item));
                 document.body.appendChild(menu);
             }
 
-            // --- UI: SAVE BUTTON ---
             function createSaveButton() {
                 const btn = document.createElement('button');
                 btn.innerText = "💾 Save Project";
                 btn.id = "proto-save-btn";
-                btn.className = "fixed bottom-5 right-5 z-[2147483647] bg-blue-600 text-white font-bold py-2 px-4 rounded shadow-lg hover:bg-blue-700 transition-colors";
+                btn.className = "fixed bottom-5 right-5 z-[2147483647] bg-blue-600 text-white font-bold py-2 px-4 rounded shadow-lg hover:bg-blue-700";
                 btn.onclick = () => {
-                    // Cleanup
-                    const menu = document.getElementById('proto-menu');
-                    if (menu) menu.remove();
+                    const menu = document.getElementById('proto-menu'); if (menu) menu.remove();
                     btn.remove();
                     if (selectedElement) selectedElement.classList.remove('outline', 'outline-2', 'outline-blue-500', 'outline-offset-2');
-
-                    // Export
-                    const docContent = document.documentElement.outerHTML;
-                    const blob = new Blob([docContent], {type: "text/html"});
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = "index.html";
-                    document.body.appendChild(a);
-                    a.click();
                     
-                    // Restore
-                    document.body.removeChild(a);
-                    URL.revokeObjectURL(url);
+                    // We remove the runtime binding flag before saving? 
+                    // No need, properties starting with _ aren't saved in HTML anyway.
+                    
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(new Blob([document.documentElement.outerHTML], {type: "text/html"}));
+                    a.download = "index.html";
+                    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+                    
                     if (selectedElement) selectedElement.classList.add('outline', 'outline-2', 'outline-blue-500', 'outline-offset-2');
                     document.body.appendChild(btn);
                 };
@@ -182,23 +167,23 @@
             }
             createSaveButton();
 
-
-            // --- EVENT: RIGHT CLICK (Property Editor) ---
             document.addEventListener('contextmenu', (e) => {
                 if (!selectedElement) return;
                 e.preventDefault();
 
-                const createInput = (label, category, isSelect = false, options = []) => {
+                const createControl = (label, category, type = 'text', options = []) => {
                     const row = document.createElement('div');
                     row.className = "flex justify-between items-center mb-2";
                     const lbl = document.createElement('span');
-                    lbl.className = "text-gray-500 font-bold mr-3 w-16";
+                    lbl.className = "text-gray-500 font-bold mr-3 w-20 truncate";
                     lbl.innerText = label;
 
                     let input;
-                    if (isSelect) {
+                    if (type === 'select') {
                         input = document.createElement('select');
-                        input.className = "bg-gray-50 border border-gray-300 rounded px-2 py-1 flex-1 focus:outline-none focus:border-blue-500";
+                        input.className = "bg-gray-50 border border-gray-300 rounded px-2 py-1 flex-1 focus:outline-none focus:border-blue-500 w-full";
+                        const def = document.createElement('option');
+                        def.value = ""; def.innerText = "-"; input.appendChild(def);
                         options.forEach(opt => {
                             const o = document.createElement('option');
                             o.value = opt; o.innerText = opt; input.appendChild(o);
@@ -208,7 +193,7 @@
                     } else {
                         input = document.createElement('input');
                         input.type = 'text';
-                        input.className = "bg-gray-50 border border-gray-300 rounded px-2 py-1 flex-1 focus:outline-none focus:border-blue-500";
+                        input.className = "bg-gray-50 border border-gray-300 rounded px-2 py-1 flex-1 focus:outline-none focus:border-blue-500 w-full";
                         input.value = TwManager.getValue(selectedElement, category);
                         input.onchange = () => TwManager.update(selectedElement, category, input.value);
                     }
@@ -222,30 +207,53 @@
                 title.className = "mb-3 pb-2 border-b border-gray-100 font-bold text-gray-800 uppercase tracking-wider";
                 items.push(title);
 
-                if (tag === 'DIV' || tag === 'IMG' || tag === 'H1' || tag === 'P') { // Expanded to include P
-                    items.push(createInput('Width', 'width'));
-                    items.push(createInput('Height', 'height'));
-                    items.push(createInput('Padding', 'padding'));
-                    items.push(createInput('Margin', 'margin'));
+                if (['DIV', 'IMG', 'H1', 'P', 'SPAN', 'BUTTON'].includes(tag)) {
+                    items.push(createControl('Width', 'width'));
+                    items.push(createControl('Height', 'height'));
+                    items.push(createControl('Padding', 'padding'));
+                    items.push(createControl('Margin', 'margin'));
                 }
 
                 if (tag === 'DIV') {
-                    items.push(createInput('Min W', 'minWidth')); items.push(createInput('Min H', 'minHeight'));
-                    items.push(createInput('Bg', 'bgColor')); items.push(createInput('Radius', 'rounded'));
-                    items.push(createInput('Border', 'border'));
-                    items.push(createInput('Dir', 'flexDir', true, ['flex-row', 'flex-col']));
-                    items.push(createInput('Justify', 'justify', true, ['justify-start', 'justify-end', 'justify-center', 'justify-between']));
-                    items.push(createInput('Align', 'items', true, ['items-start', 'items-end', 'items-center']));
+                    items.push(createControl('Bg Color', 'bgColor'));
+                    items.push(createControl('Radius', 'rounded', 'select', OPTIONS.rounded));
+                    items.push(createControl('Border', 'borderWidth', 'select', OPTIONS.borderWidth));
+                    
+                    const flexLabel = document.createElement('div');
+                    flexLabel.innerText = "Layout";
+                    flexLabel.className = "mt-2 mb-1 text-gray-400 font-bold text-[10px] uppercase";
+                    items.push(flexLabel);
+                    
+                    items.push(createControl('Direction', 'flexDir', 'select', OPTIONS.flexDir));
+                    items.push(createControl('Justify', 'justify', 'select', OPTIONS.justify));
+                    items.push(createControl('Align', 'items', 'select', OPTIONS.items));
                 }
 
-                if (tag === 'H1' || tag === 'P' || tag === 'SPAN') {
-                    items.push(createInput('Size', 'textSize')); items.push(createInput('Color', 'textColor'));
-                    items.push(createInput('Align', 'textAlign', true, ['text-left', 'text-center', 'text-right']));
+                if (['H1', 'P', 'SPAN', 'BUTTON', 'A'].includes(tag)) {
+                    items.push(createControl('Font', 'fontFamily', 'select', OPTIONS.fontFamily));
+                    items.push(createControl('Weight', 'fontWeight', 'select', OPTIONS.fontWeight));
+                    items.push(createControl('Size', 'textSize', 'select', OPTIONS.textSize));
+                    items.push(createControl('Align', 'textAlign', 'select', OPTIONS.textAlign));
+                    items.push(createControl('Color', 'textColor'));
+                    
                     const txtInp = document.createElement('textarea');
-                    txtInp.className = "bg-gray-50 border border-gray-300 rounded px-2 py-1 w-full text-xs h-16 mt-2";
+                    txtInp.className = "bg-gray-50 border border-gray-300 rounded px-2 py-1 w-full text-xs h-16 mt-2 font-sans";
                     txtInp.value = selectedElement.innerText;
                     txtInp.oninput = () => selectedElement.innerText = txtInp.value;
                     items.push(txtInp);
+                }
+
+                if (tag === 'IMG') {
+                     const srcRow = document.createElement('div');
+                     srcRow.className = "mb-2";
+                     const srcLbl = document.createElement('div');
+                     srcLbl.className = "text-gray-500 font-bold mb-1"; srcLbl.innerText = "Source URL";
+                     const srcInp = document.createElement('input');
+                     srcInp.className = "bg-gray-50 border border-gray-300 rounded px-2 py-1 w-full";
+                     srcInp.value = selectedElement.src;
+                     srcInp.onchange = () => selectedElement.src = srcInp.value;
+                     srcRow.appendChild(srcLbl); srcRow.appendChild(srcInp);
+                     items.push(srcRow);
                 }
 
                 const delBtn = document.createElement('button');
@@ -257,7 +265,6 @@
                 createMenu(e.clientX, e.clientY, items);
             });
 
-            // --- EVENT: KEYDOWN (Shift+A & Shortcuts) ---
             document.addEventListener('keydown', (e) => {
                 if (e.shiftKey && e.key.toLowerCase() === 'a') {
                     const items = ['div', 'text', 'img'].map(opt => {
@@ -266,50 +273,28 @@
                         btn.className = "w-full text-left px-3 py-2 hover:bg-blue-50 hover:text-blue-600 rounded text-gray-700 font-bold transition-colors";
                         btn.onclick = () => {
                             let newEl;
-                            if (opt === 'div') newEl = document.createElement('div');
-                            else if (opt === 'text') { newEl = document.createElement('h1'); newEl.innerText = "New Heading"; }
-                            else if (opt === 'img') { newEl = document.createElement('img'); newEl.src = "https://via.placeholder.com/150"; }
-                            
-                            // RULE 2: Tailwind Defaults
-                            if (opt === 'div') newEl.className = "min-w-[150px] min-h-[150px] bg-gray-100 border-2 border-dashed border-gray-300 p-4 m-2 flex flex-col";
-                            if (opt === 'text') newEl.className = "text-4xl font-bold text-gray-800 m-2";
-                            if (opt === 'img') newEl.className = "w-[150px] h-auto m-2";
-
-                            // USE THE SHARED BRAIN
+                            if (opt === 'div') { newEl = document.createElement('div'); newEl.className = "min-w-[150px] min-h-[150px] bg-gray-100 border-2 border-dashed border-gray-300 p-4 m-2 flex flex-col"; }
+                            else if (opt === 'text') { newEl = document.createElement('h1'); newEl.innerText = "New Heading"; newEl.className = "text-4xl font-bold text-gray-800 m-2"; }
+                            else if (opt === 'img') { newEl = document.createElement('img'); newEl.src = "https://via.placeholder.com/150"; newEl.className = "w-[150px] h-auto m-2"; }
                             makeEditable(newEl);
-
-                            const parent = selectedElement || document.body;
-                            parent.appendChild(newEl);
+                            (selectedElement || document.body).appendChild(newEl);
                             document.getElementById('proto-menu').remove();
-                            // Trigger click to select immediately
                             newEl.click();
                         };
                         return btn;
                     });
                     createMenu(mouseX, mouseY, items);
                 }
-
                 if (e.key === 'Escape') {
-                    const menu = document.getElementById('proto-menu');
-                    if (menu) menu.remove();
-                    if (selectedElement) {
-                        selectedElement.classList.remove('outline', 'outline-2', 'outline-blue-500', 'outline-offset-2');
-                        selectedElement = null;
-                    }
+                    const menu = document.getElementById('proto-menu'); if(menu) menu.remove();
+                    if(selectedElement) { selectedElement.classList.remove('outline', 'outline-2', 'outline-blue-500', 'outline-offset-2'); selectedElement = null; }
                 }
-
                 if (selectedElement && e.shiftKey) {
-                    const parent = selectedElement.parentNode;
-                    if (e.key === 'ArrowLeft') {
-                        const prev = selectedElement.previousElementSibling;
-                        if (prev) parent.insertBefore(selectedElement, prev);
-                    } else if (e.key === 'ArrowRight') {
-                        const next = selectedElement.nextElementSibling;
-                        if (next) parent.insertBefore(selectedElement, next.nextElementSibling);
-                    }
+                    const p = selectedElement.parentNode;
+                    if (e.key === 'ArrowLeft') { const prev = selectedElement.previousElementSibling; if(prev) p.insertBefore(selectedElement, prev); }
+                    else if (e.key === 'ArrowRight') { const next = selectedElement.nextElementSibling; if(next) p.insertBefore(selectedElement, next.nextElementSibling); }
                 }
             });
-
         })();
     </script>
 </body>
