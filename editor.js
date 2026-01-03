@@ -1,0 +1,467 @@
+(function() {
+    // --- CONFIGURATION ---
+    const TAILWIND_CDN = 'https://cdn.tailwindcss.com';
+    
+    // --- INTERNAL STYLES ---
+    const EDITOR_CSS = `
+        .proto-handle {
+            position: absolute; width: 12px; height: 12px; z-index: 2147483647; 
+            pointer-events: auto; box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+            border-radius: 2px; transition: transform 0.1s;
+        }
+        .proto-handle:hover { transform: scale(1.4); z-index: 2147483648; }
+        .handle-resize { background: white; border: 1px solid #3b82f6; }
+        .handle-resize:hover { background: #3b82f6; }
+        .handle-pad { background: #4ade80; border: 1px solid #16a34a; border-radius: 50%; }
+        .handle-pad:hover { background: #16a34a; }
+        .handle-marg { background: #fb923c; border: 1px solid #ea580c; }
+        .handle-marg:hover { background: #ea580c; }
+        .proto-overlay {
+            position: fixed; pointer-events: none; z-index: 2147483646;
+            border: 2px solid #3b82f6; transition: none;
+        }
+        .proto-input {
+            background: #f9fafb; border: 1px solid #d1d5db; border-radius: 3px;
+            padding: 2px 4px; font-size: 10px; width: 100%; font-family: monospace;
+            text-align: center;
+        }
+        .proto-input:focus { outline: none; border-color: #3b82f6; background: white; }
+        .proto-breadcrumbs {
+            position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+            background: rgba(30, 41, 59, 0.9); backdrop-filter: blur(4px);
+            color: white; padding: 6px 16px; border-radius: 20px;
+            display: flex; align-items: center; gap: 8px;
+            font-family: monospace; font-size: 12px;
+            z-index: 2147483647; box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+        }
+        .proto-crumb {
+            cursor: pointer; opacity: 0.7; transition: all 0.2s;
+            border: none; background: none; color: inherit; padding: 0; font-family: inherit;
+        }
+        .proto-crumb:hover { opacity: 1; text-decoration: underline; }
+        .proto-crumb.active { opacity: 1; font-weight: bold; color: #60a5fa; }
+        .proto-sep { opacity: 0.4; }
+    `;
+
+    const OPTIONS = {
+        textSize: ['text-xs', 'text-sm', 'text-base', 'text-lg', 'text-xl', 'text-2xl', 'text-3xl', 'text-4xl'],
+        fontFamily: ['font-sans', 'font-serif', 'font-mono'],
+        fontWeight: ['font-thin', 'font-normal', 'font-bold', 'font-black'],
+        rounded: ['rounded-none', 'rounded-sm', 'rounded', 'rounded-md', 'rounded-lg', 'rounded-full'],
+        borderWidth: ['border-0', 'border', 'border-2', 'border-4', 'border-8'],
+        textAlign: ['text-left', 'text-center', 'text-right', 'text-justify'],
+        flexDir: ['flex-row', 'flex-col'],
+        justify: ['justify-start', 'justify-end', 'justify-center', 'justify-between'],
+        items: ['items-start', 'items-end', 'items-center']
+    };
+
+    let selectedElement = null;
+    let mouseX = 0, mouseY = 0;
+    
+    // PERFORMANCE FIX: Flag to track if we are currently holding down a key
+    let isReordering = false;
+
+    // --- MANAGERS ---
+
+    function injectEditorStyles() {
+        if (document.getElementById('editor-ui-styles')) return;
+        const style = document.createElement('style');
+        style.id = 'editor-ui-styles';
+        style.textContent = EDITOR_CSS;
+        document.head.appendChild(style);
+    }
+
+    const TwManager = {
+        patterns: {
+            width: /^w-/, height: /^h-/, minWidth: /^min-w-/, minHeight: /^min-h-/, maxWidth: /^max-w-/, maxHeight: /^max-h-/, 
+            pt: /^pt-/, pr: /^pr-/, pb: /^pb-/, pl: /^pl-/, mt: /^mt-/, mr: /^mr-/, mb: /^mb-/, ml: /^ml-/,
+            padding: /^p-/, margin: /^m-/, bgColor: /^bg-/, textColor: /^text-(?!xs|sm|base|lg|xl|\d+xl|left|center|right|justify)/, 
+            textSize: /^text-(xs|sm|base|lg|xl|\d+xl)/, fontFamily: /^font-(sans|serif|mono)/,
+            fontWeight: /^font-(thin|extralight|light|normal|medium|semibold|bold|extrabold|black)/,
+            rounded: /^rounded-/, borderWidth: /^border(-[0248])?$|^border$/,
+            flexDir: /^flex-(row|col)/, justify: /^justify-/, items: /^items-/, textAlign: /^text-(left|center|right|justify)/
+        },
+        update: (el, category, newValue) => {
+            const pattern = TwManager.patterns[category];
+            const toRemove = [];
+            el.classList.forEach(cls => { if (pattern.test(cls)) toRemove.push(cls); });
+            toRemove.forEach(c => el.classList.remove(c));
+            if (newValue && newValue.trim() !== '') el.classList.add(newValue.trim());
+        },
+        getValue: (el, category) => {
+            const pattern = TwManager.patterns[category];
+            let match = '';
+            el.classList.forEach(cls => { if (pattern.test(cls)) match = cls; });
+            if (category === 'borderWidth' && match === '' && el.classList.contains('border')) return 'border';
+            return match;
+        }
+    };
+
+    const HistoryManager = {
+        undoStack: [], redoStack: [], maxDepth: 50,
+        getCleanState: () => {
+            const clone = document.body.cloneNode(true);
+            const ui = clone.querySelectorAll('#proto-menu, .proto-overlay, .proto-handle, .proto-breadcrumbs');
+            ui.forEach(el => el.remove());
+            return clone.innerHTML;
+        },
+        pushState: () => {
+            const state = HistoryManager.getCleanState();
+            HistoryManager.undoStack.push(state);
+            if (HistoryManager.undoStack.length > HistoryManager.maxDepth) HistoryManager.undoStack.shift();
+            HistoryManager.redoStack = []; 
+        },
+        undo: () => {
+            if (HistoryManager.undoStack.length === 0) return;
+            HistoryManager.redoStack.push(HistoryManager.getCleanState());
+            HistoryManager.restore(HistoryManager.undoStack.pop());
+        },
+        redo: () => {
+            if (HistoryManager.redoStack.length === 0) return;
+            HistoryManager.undoStack.push(HistoryManager.getCleanState());
+            HistoryManager.restore(HistoryManager.redoStack.pop());
+        },
+        restore: (htmlContent) => {
+            if (selectedElement) { selectedElement = null; OverlayManager.update(); BreadcrumbManager.update(); }
+            const menu = document.getElementById('proto-menu'); if (menu) menu.remove();
+            const crumbs = document.querySelector('.proto-breadcrumbs'); if(crumbs) crumbs.remove();
+            document.body.innerHTML = htmlContent;
+            scanAndHydrate();
+        }
+    };
+
+    const OverlayManager = {
+        overlay: null,
+        update: () => {
+            if (!selectedElement) {
+                if (OverlayManager.overlay) OverlayManager.overlay.remove();
+                OverlayManager.overlay = null;
+                return;
+            }
+            if (!OverlayManager.overlay) {
+                OverlayManager.overlay = document.createElement('div');
+                OverlayManager.overlay.className = 'proto-overlay';
+                const handles = [
+                    { type: 'resize-r',  cls: 'handle-resize', cursor: 'ew-resize',   pos: 'top: 50%; right: -6px; transform: translateY(-50%);' },
+                    { type: 'resize-b',  cls: 'handle-resize', cursor: 'ns-resize',   pos: 'bottom: -6px; left: 50%; transform: translateX(-50%);' },
+                    { type: 'resize-br', cls: 'handle-resize', cursor: 'nwse-resize', pos: 'bottom: -6px; right: -6px;' },
+                    { type: 'pt', cls: 'handle-pad', cursor: 'ns-resize', title: 'Padding Top', side: 'pt' },
+                    { type: 'pr', cls: 'handle-pad', cursor: 'ew-resize', title: 'Padding Right', side: 'pr' },
+                    { type: 'pb', cls: 'handle-pad', cursor: 'ns-resize', title: 'Padding Bottom', side: 'pb' },
+                    { type: 'pl', cls: 'handle-pad', cursor: 'ew-resize', title: 'Padding Left', side: 'pl' },
+                    { type: 'mt', cls: 'handle-marg', cursor: 'ns-resize', title: 'Margin Top', side: 'mt' },
+                    { type: 'mr', cls: 'handle-marg', cursor: 'ew-resize', title: 'Margin Right', side: 'mr' },
+                    { type: 'mb', cls: 'handle-marg', cursor: 'ns-resize', title: 'Margin Bottom', side: 'mb' },
+                    { type: 'ml', cls: 'handle-marg', cursor: 'ew-resize', title: 'Margin Left', side: 'ml' }
+                ];
+                handles.forEach(h => {
+                    const handle = document.createElement('div');
+                    handle.className = `proto-handle ${h.cls}`;
+                    handle.style.cursor = h.cursor;
+                    if(h.title) handle.title = h.title;
+                    handle.dataset.type = h.type;
+                    handle.addEventListener('mousedown', (e) => {
+                        e.stopPropagation(); e.preventDefault();
+                        OverlayManager.startDrag(e, h.type, handle);
+                    });
+                    OverlayManager.overlay.appendChild(handle);
+                });
+                document.body.appendChild(OverlayManager.overlay);
+            }
+            const rect = selectedElement.getBoundingClientRect();
+            Object.assign(OverlayManager.overlay.style, { top: `${rect.top}px`, left: `${rect.left}px`, width: `${rect.width}px`, height: `${rect.height}px` });
+            const style = window.getComputedStyle(selectedElement);
+            const p = { t: parseFloat(style.paddingTop)||0, r: parseFloat(style.paddingRight)||0, b: parseFloat(style.paddingBottom)||0, l: parseFloat(style.paddingLeft)||0 };
+            const m = { t: parseFloat(style.marginTop)||0, r: parseFloat(style.marginRight)||0, b: parseFloat(style.marginBottom)||0, l: parseFloat(style.marginLeft)||0 };
+            const setPos = (type, css) => { const h = OverlayManager.overlay.querySelector(`[data-type="${type}"]`); if(h) Object.assign(h.style, css); };
+            
+            setPos('resize-r',  { top: '50%', right: '-6px', transform: 'translateY(-50%)' });
+            setPos('resize-b',  { bottom: '-6px', left: '50%', transform: 'translateX(-50%)' });
+            setPos('resize-br', { bottom: '-6px', right: '-6px' });
+            setPos('pt', { top: `${Math.max(10, p.t)}px`, left: '50%', transform: 'translateX(-50%)' });
+            setPos('pb', { bottom: `${Math.max(10, p.b)}px`, left: '50%', transform: 'translateX(-50%)' });
+            setPos('pl', { left: `${Math.max(10, p.l)}px`, top: '50%', transform: 'translateY(-50%)' });
+            setPos('pr', { right: `${Math.max(10, p.r)}px`, top: '50%', transform: 'translateY(-50%)' });
+            setPos('mt', { top: `-${Math.max(15, m.t)}px`, left: '50%', transform: 'translateX(-50%)' });
+            setPos('mb', { bottom: `-${Math.max(15, m.b)}px`, left: '50%', transform: 'translateX(-50%)' });
+            setPos('ml', { left: `-${Math.max(15, m.l)}px`, top: '50%', transform: 'translateY(-50%)' });
+            setPos('mr', { right: `-${Math.max(15, m.r)}px`, top: '50%', transform: 'translateY(-50%)' });
+        },
+        startDrag: (e, type, handleElement) => {
+            HistoryManager.pushState();
+            const startX = e.clientX; const startY = e.clientY;
+            const rect = selectedElement.getBoundingClientRect();
+            const style = window.getComputedStyle(selectedElement);
+            const elStyle = selectedElement.style; const overlayStyle = OverlayManager.overlay.style;
+            const startOverlayTop = rect.top; const startOverlayLeft = rect.left;
+            const initial = {
+                w: rect.width, h: rect.height,
+                pt: parseFloat(style.paddingTop)||0, pr: parseFloat(style.paddingRight)||0, pb: parseFloat(style.paddingBottom)||0, pl: parseFloat(style.paddingLeft)||0,
+                mt: parseFloat(style.marginTop)||0, mr: parseFloat(style.marginRight)||0, mb: parseFloat(style.marginBottom)||0, ml: parseFloat(style.marginLeft)||0
+            };
+            const onMove = (ev) => {
+                const dx = ev.clientX - startX; const dy = ev.clientY - startY;
+                if (type.startsWith('resize')) {
+                    let newW = initial.w, newH = initial.h;
+                    if (type.includes('r')) newW = Math.max(10, initial.w + dx);
+                    if (type.includes('b')) newH = Math.max(10, initial.h + dy);
+                    elStyle.width = `${newW}px`; elStyle.height = `${newH}px`; overlayStyle.width = `${newW}px`; overlayStyle.height = `${newH}px`;
+                }
+                if (type === 'pt') { const val=Math.max(0,initial.pt+dy); elStyle.paddingTop=`${val}px`; handleElement.style.top=`${Math.max(10,val)}px`; }
+                if (type === 'pb') { const val=Math.max(0,initial.pb-dy); elStyle.paddingBottom=`${val}px`; handleElement.style.bottom=`${Math.max(10,val)}px`; }
+                if (type === 'pl') { const val=Math.max(0,initial.pl+dx); elStyle.paddingLeft=`${val}px`; handleElement.style.left=`${Math.max(10,val)}px`; }
+                if (type === 'pr') { const val=Math.max(0,initial.pr-dx); elStyle.paddingRight=`${val}px`; handleElement.style.right=`${Math.max(10,val)}px`; }
+                if (type === 'mt') { const val=initial.mt-dy; elStyle.marginTop=`${val}px`; overlayStyle.top=`${startOverlayTop-dy}px`; handleElement.style.top=`-${Math.max(15,val)}px`; }
+                if (type === 'mb') { const val=initial.mb+dy; elStyle.marginBottom=`${val}px`; handleElement.style.bottom=`-${Math.max(15,val)}px`; }
+                if (type === 'ml') { const val=initial.ml-dx; elStyle.marginLeft=`${val}px`; overlayStyle.left=`${startOverlayLeft-dx}px`; handleElement.style.left=`-${Math.max(15,val)}px`; }
+                if (type === 'mr') { const val=initial.mr+dx; elStyle.marginRight=`${val}px`; handleElement.style.right=`-${Math.max(15,val)}px`; }
+            };
+            const onUp = () => {
+                window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp);
+                const s = selectedElement.style;
+                const mappings = [
+                    { prop: 'width', tw: 'width', pfx: 'w' }, { prop: 'height', tw: 'height', pfx: 'h' },
+                    { prop: 'paddingTop', tw: 'pt', pfx: 'pt' }, { prop: 'paddingRight', tw: 'pr', pfx: 'pr' }, { prop: 'paddingBottom', tw: 'pb', pfx: 'pb' }, { prop: 'paddingLeft', tw: 'pl', pfx: 'pl' },
+                    { prop: 'marginTop', tw: 'mt', pfx: 'mt' }, { prop: 'marginRight', tw: 'mr', pfx: 'mr' }, { prop: 'marginBottom', tw: 'mb', pfx: 'mb' }, { prop: 'marginLeft', tw: 'ml', pfx: 'ml' }
+                ];
+                mappings.forEach(m => { const val = s[m.prop]; if (val) { TwManager.update(selectedElement, m.tw, `${m.pfx}-[${val}]`); s[m.prop] = ''; } });
+                document.body.classList.add('jit-refresh');
+                setTimeout(() => { document.body.classList.remove('jit-refresh'); OverlayManager.update(); }, 50);
+            };
+            window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onUp);
+        }
+    };
+
+    const BreadcrumbManager = {
+        bar: null,
+        update: () => {
+            if (!BreadcrumbManager.bar) {
+                BreadcrumbManager.bar = document.createElement('div');
+                BreadcrumbManager.bar.className = 'proto-breadcrumbs';
+                document.body.appendChild(BreadcrumbManager.bar);
+            }
+            if (!selectedElement) { BreadcrumbManager.bar.style.display = 'none'; return; }
+            BreadcrumbManager.bar.style.display = 'flex';
+            BreadcrumbManager.bar.innerHTML = ''; 
+            const chain = [];
+            let curr = selectedElement;
+            while(curr && curr !== document.documentElement) { chain.unshift(curr); if (curr === document.body) break; curr = curr.parentElement; }
+            chain.forEach((el, index) => {
+                const btn = document.createElement('button'); btn.className = 'proto-crumb';
+                let label = el.tagName.toLowerCase();
+                if (el.id && !el.id.startsWith('proto')) label += `#${el.id}`;
+                else if (el.classList.length > 0) { const cls = Array.from(el.classList).find(c => !c.startsWith('w-') && !c.startsWith('h-')) || el.classList[0]; if (cls) label += `.${cls}`; }
+                if(label.length > 15) label = label.substring(0, 12) + '...';
+                btn.innerText = label;
+                if (el === selectedElement) btn.classList.add('active');
+                btn.onclick = (e) => { e.stopPropagation(); const menu = document.getElementById('proto-menu'); if (menu) menu.remove(); selectedElement = el; OverlayManager.update(); BreadcrumbManager.update(); };
+                BreadcrumbManager.bar.appendChild(btn);
+                if (index < chain.length - 1) { const sep = document.createElement('span'); sep.className = 'proto-sep'; sep.innerText = '>'; BreadcrumbManager.bar.appendChild(sep); }
+            });
+        }
+    };
+
+    // --- MAIN INIT ---
+    function makeEditable(el) {
+        if (el._figma_bound) return; el._figma_bound = true; el.dataset.editable = "true";
+        if (el.tagName === 'DIV' && el.innerHTML.trim() === '') el.classList.add('min-w-[50px]', 'min-h-[50px]', 'border', 'border-dashed', 'border-gray-300');
+        el.addEventListener('click', (ev) => {
+            ev.stopPropagation(); const menu = document.getElementById('proto-menu'); if (menu) menu.remove();
+            selectedElement = el; OverlayManager.update(); BreadcrumbManager.update();
+        });
+    }
+
+    function initializeEnvironment() {
+        injectEditorStyles(); 
+        
+        let hasTailwind = false;
+        document.querySelectorAll('script').forEach(s => { if (s.src && s.src.includes('tailwindcss')) hasTailwind = true; });
+        if (!hasTailwind) { 
+            document.querySelectorAll('link[rel="stylesheet"], style').forEach(el => {
+                if (el.id !== 'editor-ui-styles') el.disabled = true;
+            });
+            const all = document.body.getElementsByTagName("*"); for (let el of all) el.removeAttribute("style");
+            document.body.removeAttribute("style");
+
+            const script = document.createElement('script'); script.src = TAILWIND_CDN;
+            script.onload = () => { document.body.classList.add('jit-wake-up'); setTimeout(() => document.body.classList.remove('jit-wake-up'), 0); };
+            document.head.appendChild(script);
+        }
+        scanAndHydrate();
+    }
+    
+    function scanAndHydrate() {
+        const all = document.body.getElementsByTagName('*');
+        for (let el of all) {
+            if (el.tagName === 'SCRIPT' || (el.id && el.id.startsWith('proto-')) || el.classList.contains('proto-handle') || el.classList.contains('proto-overlay') || el.classList.contains('proto-breadcrumbs')) continue;
+            makeEditable(el);
+        }
+    }
+
+    // Start
+    initializeEnvironment();
+    document.addEventListener('mousemove', (e) => { mouseX = e.clientX; mouseY = e.clientY; });
+
+    // --- CONTEXT MENU (Cascading) ---
+    document.addEventListener('contextmenu', (e) => {
+        if (!selectedElement) return; e.preventDefault();
+        const createFlyout = (label, children) => {
+            const row = document.createElement('div');
+            row.className = "group relative px-3 py-2 hover:bg-blue-50 cursor-default flex justify-between items-center text-gray-700 font-bold text-[11px] border-b border-gray-50 last:border-0";
+            const MENU_WIDTH = 140; const FLYOUT_WIDTH = 240; const WINDOW_W = window.innerWidth;
+            const openLeft = (e.clientX + MENU_WIDTH + FLYOUT_WIDTH) > WINDOW_W;
+            const flyoutPosClass = openLeft ? "right-full mr-1" : "left-full ml-1";
+            const arrow = openLeft ? "◀" : "▶";
+            row.innerHTML = `<span>${label}</span><span class="text-gray-400 text-[8px]">${arrow}</span>`;
+            const flyout = document.createElement('div');
+            flyout.className = `hidden group-hover:block absolute top-0 w-[240px] bg-white border border-gray-200 shadow-xl rounded-lg p-2 z-[50] ${flyoutPosClass}`;
+            children.forEach(c => flyout.appendChild(c)); row.appendChild(flyout); return row;
+        };
+        const createControl = (label, category, type = 'text', options = []) => {
+            const row = document.createElement('div'); row.className = "flex justify-between items-center mb-2 last:mb-0";
+            const lbl = document.createElement('span'); lbl.className = "text-gray-500 font-medium mr-2 w-16 truncate"; lbl.innerText = label;
+            let input;
+            const changeHandler = (val) => { HistoryManager.pushState(); TwManager.update(selectedElement, category, val); OverlayManager.update(); };
+            if (type === 'select') {
+                input = document.createElement('select'); input.className = "proto-input flex-1";
+                const def = document.createElement('option'); def.value = ""; def.innerText = "-"; input.appendChild(def);
+                options.forEach(opt => { const o = document.createElement('option'); o.value = opt; o.innerText = opt; input.appendChild(o); });
+                input.value = TwManager.getValue(selectedElement, category); input.onchange = () => changeHandler(input.value);
+            } else {
+                input = document.createElement('input'); input.type = 'text'; input.className = "proto-input flex-1";
+                input.value = TwManager.getValue(selectedElement, category); input.onchange = () => changeHandler(input.value);
+            }
+            row.appendChild(lbl); row.appendChild(input); return row;
+        };
+        const createQuad = (label, categories) => {
+            const row = document.createElement('div'); row.className = "flex flex-col mb-2 last:mb-0";
+            const header = document.createElement('div'); header.className = "flex justify-between mb-1";
+            const lbl = document.createElement('span'); lbl.className = "text-gray-500 font-medium"; lbl.innerText = label; header.appendChild(lbl); row.appendChild(header);
+            const grid = document.createElement('div'); grid.className = "grid grid-cols-2 gap-1"; 
+            const placeholders = ['Top', 'Right', 'Bottom', 'Left'];
+            categories.forEach((cat, i) => {
+                const input = document.createElement('input'); input.type = 'text'; input.className = "proto-input text-center";
+                input.placeholder = placeholders[i]; input.value = TwManager.getValue(selectedElement, cat);
+                input.onchange = () => { HistoryManager.pushState(); TwManager.update(selectedElement, cat, input.value); OverlayManager.update(); };
+                grid.appendChild(input);
+            });
+            row.appendChild(grid); return row;
+        };
+
+        const items = []; const tag = selectedElement.tagName;
+        const title = document.createElement('div'); title.innerText = `<${tag.toLowerCase()}>`; 
+        title.className = "px-3 py-2 bg-gray-800 text-white font-mono font-bold text-center uppercase tracking-widest text-[10px] rounded-t-md"; items.push(title);
+
+        if (['H1', 'P', 'SPAN', 'BUTTON', 'A'].includes(tag)) {
+            const controls = [];
+            const txtArea = document.createElement('textarea');
+            txtArea.className = "w-full border border-gray-300 rounded p-1 text-xs mb-2 font-sans h-16 focus:outline-none focus:border-blue-500";
+            txtArea.value = selectedElement.innerText;
+            txtArea.onchange = () => { HistoryManager.pushState(); selectedElement.innerText = txtArea.value; };
+            controls.push(txtArea);
+            controls.push(createControl('Font', 'fontFamily', 'select', OPTIONS.fontFamily));
+            controls.push(createControl('Weight', 'fontWeight', 'select', OPTIONS.fontWeight));
+            controls.push(createControl('Size', 'textSize', 'select', OPTIONS.textSize));
+            controls.push(createControl('Color', 'textColor'));
+            controls.push(createControl('Align', 'textAlign', 'select', OPTIONS.textAlign));
+            items.push(createFlyout("Text & Content", controls));
+        }
+
+        const layoutControls = [];
+        layoutControls.push(createControl('Width', 'width')); layoutControls.push(createControl('Height', 'height'));
+        layoutControls.push(createControl('Pad (All)', 'padding')); layoutControls.push(createQuad('Padding Sides', ['pt', 'pr', 'pb', 'pl']));
+        layoutControls.push(createControl('Marg (All)', 'margin')); layoutControls.push(createQuad('Margin Sides', ['mt', 'mr', 'mb', 'ml']));
+        if (tag === 'DIV') {
+            const div = document.createElement('div'); div.className = "mt-3 mb-1 text-[9px] text-gray-400 font-bold uppercase border-t border-gray-100 pt-2"; div.innerText = "Flexbox"; layoutControls.push(div);
+            layoutControls.push(createControl('Direction', 'flexDir', 'select', OPTIONS.flexDir)); layoutControls.push(createControl('Justify', 'justify', 'select', OPTIONS.justify)); layoutControls.push(createControl('Align', 'items', 'select', OPTIONS.items));
+        }
+        items.push(createFlyout("Dimensions & Layout", layoutControls));
+
+        const appearanceControls = [];
+        appearanceControls.push(createControl('Bg Color', 'bgColor')); appearanceControls.push(createControl('Border', 'borderWidth', 'select', OPTIONS.borderWidth)); appearanceControls.push(createControl('Radius', 'rounded', 'select', OPTIONS.rounded));
+        if (tag === 'IMG') {
+            const srcRow = document.createElement('div'); srcRow.className = "mb-2"; const srcLbl = document.createElement('div'); srcLbl.className = "text-gray-500 font-medium mb-1"; srcLbl.innerText = "Source URL";
+            const srcInp = document.createElement('input'); srcInp.className = "proto-input text-left"; srcInp.value = selectedElement.src;
+            srcInp.onchange = () => { HistoryManager.pushState(); selectedElement.src = srcInp.value; }; srcRow.appendChild(srcLbl); srcRow.appendChild(srcInp); appearanceControls.push(srcRow);
+        }
+        items.push(createFlyout("Appearance", appearanceControls));
+
+        const delBtn = document.createElement('button'); delBtn.innerText = "Delete Element"; delBtn.className = "w-full text-left px-3 py-2 text-red-600 font-bold hover:bg-red-50 border-t border-gray-100 rounded-b-md text-[11px]";
+        delBtn.onclick = () => { if(confirm("Delete?")) { HistoryManager.pushState(); selectedElement.remove(); selectedElement = null; OverlayManager.update(); BreadcrumbManager.update(); document.getElementById('proto-menu').remove(); }};
+        items.push(delBtn);
+
+        const existing = document.getElementById('proto-menu'); if (existing) existing.remove();
+        const menu = document.createElement('div'); menu.id = 'proto-menu';
+        menu.className = `fixed z-[2147483647] bg-white border border-gray-200 shadow-2xl rounded-lg flex flex-col min-w-[140px] font-mono text-xs p-0`;
+        menu.style.top = `${e.clientY}px`; menu.style.left = `${e.clientX}px`;
+        items.forEach(item => menu.appendChild(item)); document.body.appendChild(menu);
+    });
+
+    // --- KEY RESET LISTENER (LAG FIX) ---
+    document.addEventListener('keyup', (e) => {
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') isReordering = false;
+    });
+
+    // --- SHORTCUTS ---
+    document.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) HistoryManager.redo(); else HistoryManager.undo(); }
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); HistoryManager.redo(); }
+        
+        // Shift+S (Source)
+        if (e.shiftKey && e.key === 'S' && !e.ctrlKey && !e.metaKey) {
+            e.preventDefault();
+            selectedElement = null; OverlayManager.update(); BreadcrumbManager.update(); const menu = document.getElementById('proto-menu'); if (menu) menu.remove();
+            const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([document.documentElement.outerHTML], {type: "text/html"}));
+            a.download = "project-source.html"; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        }
+        
+        // Ctrl+Shift+S (Export Clean)
+        if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'S') {
+            e.preventDefault();
+            const clone = document.documentElement.cloneNode(true);
+            clone.querySelectorAll('script').forEach(s => { 
+                if(s.innerText.includes('TAILWIND_CDN')) s.remove(); 
+                if(s.src.includes('editor.js')) s.remove();
+            });
+            clone.querySelectorAll('style').forEach(s => { if(s.id === 'editor-ui-styles' || s.innerText.includes('.proto-handle')) s.remove(); });
+            clone.querySelectorAll('.proto-overlay, .proto-handle, #proto-menu, .proto-breadcrumbs').forEach(el => el.remove());
+            clone.querySelectorAll('*').forEach(el => el.removeAttribute('data-editable'));
+            
+            const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([clone.outerHTML], {type: "text/html"}));
+            a.download = "export-clean.html"; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        }
+
+        if (e.shiftKey && e.key.toLowerCase() === 'a') {
+            const existing = document.getElementById('proto-menu'); if (existing) existing.remove();
+            const menu = document.createElement('div'); menu.id = 'proto-menu';
+            menu.className = `fixed z-[2147483647] bg-white border border-gray-200 shadow-2xl rounded-lg flex flex-col min-w-[140px] font-mono text-xs p-0`;
+            menu.style.top = `${mouseY}px`; menu.style.left = `${mouseX}px`;
+            const items = ['div', 'text', 'img'].map(opt => {
+                const btn = document.createElement('button'); btn.innerText = opt.toUpperCase();
+                btn.className = "w-full text-left px-3 py-2 hover:bg-blue-50 hover:text-blue-600 rounded text-gray-700 font-bold transition-colors";
+                btn.onclick = () => { 
+                    HistoryManager.pushState();
+                    let newEl; if (opt === 'div') { newEl = document.createElement('div'); newEl.className = "min-w-[150px] min-h-[150px] bg-gray-100 border-2 border-dashed border-gray-300 p-4 m-2 flex flex-col"; } else if (opt === 'text') { newEl = document.createElement('h1'); newEl.innerText = "New Heading"; newEl.className = "text-4xl font-bold text-gray-800 m-2"; } else if (opt === 'img') { newEl = document.createElement('img'); newEl.src = "https://via.placeholder.com/150"; newEl.className = "w-[150px] h-auto m-2"; } 
+                    makeEditable(newEl); (selectedElement || document.body).appendChild(newEl); document.getElementById('proto-menu').remove(); selectedElement = newEl; OverlayManager.update(); BreadcrumbManager.update();
+                };
+                return btn;
+            });
+            items.forEach(i => menu.appendChild(i)); document.body.appendChild(menu);
+        }
+        if (e.key === 'Escape') { const menu = document.getElementById('proto-menu'); if(menu) menu.remove(); selectedElement = null; OverlayManager.update(); BreadcrumbManager.update(); }
+        
+        // LAG FIX: Sequence Mode for Reordering
+        if (selectedElement && e.shiftKey) { 
+            if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+                if (!isReordering) {
+                    HistoryManager.pushState(); // Save only ONCE per hold
+                    isReordering = true;
+                }
+                const p = selectedElement.parentNode;
+                if (e.key === 'ArrowLeft') { const prev = selectedElement.previousElementSibling; if(prev) p.insertBefore(selectedElement, prev); } 
+                else if (e.key === 'ArrowRight') { const next = selectedElement.nextElementSibling; if(next) p.insertBefore(selectedElement, next.nextElementSibling); } 
+                OverlayManager.update(); 
+            }
+        }
+    });
+})();
