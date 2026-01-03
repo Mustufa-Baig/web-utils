@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Figma-in-a-tag: Final Polish</title>
+    <title>Figma-in-a-tag: Time Machine</title>
     <style id="editor-ui-styles">
         /* Base Handle Style */
         .proto-handle {
@@ -40,8 +40,8 @@
 </head>
 <body class="p-20 bg-gray-50">
     <div class="mb-10">
-        <h1 class="text-4xl font-bold text-gray-800">Compact UI</h1>
-        <p class="text-lg text-gray-600">Right-click the element. The inputs are now in a 2x2 grid.</p>
+        <h1 class="text-4xl font-bold text-gray-800">Time Machine Active</h1>
+        <p class="text-lg text-gray-600">Make some changes, then press <span class="font-bold text-blue-600 bg-blue-100 px-2 rounded">Ctrl + Z</span> to Undo.</p>
     </div>
 
     <div class="w-[300px] h-[200px] bg-white border border-gray-300 shadow-md">
@@ -68,16 +68,80 @@
             let selectedElement = null;
             let mouseX = 0, mouseY = 0;
 
-            // --- TAILWIND MANAGER (Strict Cleanup Mode) ---
+            // --- HISTORY MANAGER (Time Machine) ---
+            const HistoryManager = {
+                undoStack: [],
+                redoStack: [],
+                maxDepth: 50,
+
+                // Capture snapshot of BODY content (minus Editor UI)
+                getCleanState: () => {
+                    const clone = document.body.cloneNode(true);
+                    // Remove Editor UI artifacts
+                    const ui = clone.querySelectorAll('#proto-menu, #proto-save-btn, .proto-overlay, .proto-handle');
+                    ui.forEach(el => el.remove());
+                    // Note: We KEEP the script tag so it saves with the file, 
+                    // but since we write to innerHTML, it won't re-execute.
+                    return clone.innerHTML;
+                },
+
+                pushState: () => {
+                    const state = HistoryManager.getCleanState();
+                    HistoryManager.undoStack.push(state);
+                    if (HistoryManager.undoStack.length > HistoryManager.maxDepth) HistoryManager.undoStack.shift();
+                    // Nuke redo stack on new branch
+                    HistoryManager.redoStack = []; 
+                    console.log("State Saved. Stack:", HistoryManager.undoStack.length);
+                },
+
+                undo: () => {
+                    if (HistoryManager.undoStack.length === 0) return;
+                    console.log("Undoing...");
+                    // Save current "future" state to redo stack
+                    const current = HistoryManager.getCleanState();
+                    HistoryManager.redoStack.push(current);
+
+                    // Restore past
+                    const prevState = HistoryManager.undoStack.pop();
+                    HistoryManager.restore(prevState);
+                },
+
+                redo: () => {
+                    if (HistoryManager.redoStack.length === 0) return;
+                    console.log("Redoing...");
+                    // Save current "past" state to undo stack
+                    const current = HistoryManager.getCleanState();
+                    HistoryManager.undoStack.push(current);
+
+                    // Restore future
+                    const nextState = HistoryManager.redoStack.pop();
+                    HistoryManager.restore(nextState);
+                },
+
+                restore: (htmlContent) => {
+                    // 1. Cleanup current UI
+                    if (selectedElement) { selectedElement = null; OverlayManager.update(); }
+                    const menu = document.getElementById('proto-menu'); if (menu) menu.remove();
+                    const btn = document.getElementById('proto-save-btn'); if (btn) btn.remove();
+
+                    // 2. Inject Content
+                    document.body.innerHTML = htmlContent;
+
+                    // 3. Re-Hydrate
+                    // We need to re-attach listeners to the new DOM nodes
+                    scanAndHydrate();
+                    
+                    // 4. Re-Add Save Button (since it was stripped from snapshot)
+                    createSaveButton();
+                }
+            };
+
+            // --- TAILWIND MANAGER ---
             const TwManager = {
                 patterns: {
-                    width: /^w-/, height: /^h-/, 
-                    minWidth: /^min-w-/, minHeight: /^min-h-/,
-                    maxWidth: /^max-w-/, maxHeight: /^max-h-/, 
-                    pt: /^pt-/, pr: /^pr-/, pb: /^pb-/, pl: /^pl-/,
-                    mt: /^mt-/, mr: /^mr-/, mb: /^mb-/, ml: /^ml-/,
-                    padding: /^p-/, margin: /^m-/,
-                    bgColor: /^bg-/, textColor: /^text-(?!xs|sm|base|lg|xl|\d+xl|left|center|right|justify)/, 
+                    width: /^w-/, height: /^h-/, minWidth: /^min-w-/, minHeight: /^min-h-/, maxWidth: /^max-w-/, maxHeight: /^max-h-/, 
+                    pt: /^pt-/, pr: /^pr-/, pb: /^pb-/, pl: /^pl-/, mt: /^mt-/, mr: /^mr-/, mb: /^mb-/, ml: /^ml-/,
+                    padding: /^p-/, margin: /^m-/, bgColor: /^bg-/, textColor: /^text-(?!xs|sm|base|lg|xl|\d+xl|left|center|right|justify)/, 
                     textSize: /^text-(xs|sm|base|lg|xl|\d+xl)/, fontFamily: /^font-(sans|serif|mono)/,
                     fontWeight: /^font-(thin|extralight|light|normal|medium|semibold|bold|extrabold|black)/,
                     rounded: /^rounded-/, borderWidth: /^border(-[0248])?$|^border$/,
@@ -85,11 +149,9 @@
                 },
                 update: (el, category, newValue) => {
                     const pattern = TwManager.patterns[category];
-                    // Strict Cleanup: Remove ALL matching classes first to prevent explosion
                     const toRemove = [];
                     el.classList.forEach(cls => { if (pattern.test(cls)) toRemove.push(cls); });
                     toRemove.forEach(c => el.classList.remove(c));
-                    
                     if (newValue && newValue.trim() !== '') el.classList.add(newValue.trim());
                 },
                 getValue: (el, category) => {
@@ -104,7 +166,6 @@
             // --- OVERLAY MANAGER ---
             const OverlayManager = {
                 overlay: null,
-                
                 update: () => {
                     if (!selectedElement) {
                         if (OverlayManager.overlay) OverlayManager.overlay.remove();
@@ -114,27 +175,22 @@
                     if (!OverlayManager.overlay) {
                         OverlayManager.overlay = document.createElement('div');
                         OverlayManager.overlay.className = 'proto-overlay';
-                        
                         const handles = [
                             { type: 'resize-r',  cls: 'handle-resize', cursor: 'ew-resize',   pos: 'top: 50%; right: -6px; transform: translateY(-50%);' },
                             { type: 'resize-b',  cls: 'handle-resize', cursor: 'ns-resize',   pos: 'bottom: -6px; left: 50%; transform: translateX(-50%);' },
                             { type: 'resize-br', cls: 'handle-resize', cursor: 'nwse-resize', pos: 'bottom: -6px; right: -6px;' },
-                            // Padding (Green)
                             { type: 'pt', cls: 'handle-pad', cursor: 'ns-resize', title: 'Padding Top', side: 'pt' },
                             { type: 'pr', cls: 'handle-pad', cursor: 'ew-resize', title: 'Padding Right', side: 'pr' },
                             { type: 'pb', cls: 'handle-pad', cursor: 'ns-resize', title: 'Padding Bottom', side: 'pb' },
                             { type: 'pl', cls: 'handle-pad', cursor: 'ew-resize', title: 'Padding Left', side: 'pl' },
-                            // Margin (Orange)
                             { type: 'mt', cls: 'handle-marg', cursor: 'ns-resize', title: 'Margin Top', side: 'mt' },
                             { type: 'mr', cls: 'handle-marg', cursor: 'ew-resize', title: 'Margin Right', side: 'mr' },
                             { type: 'mb', cls: 'handle-marg', cursor: 'ns-resize', title: 'Margin Bottom', side: 'mb' },
                             { type: 'ml', cls: 'handle-marg', cursor: 'ew-resize', title: 'Margin Left', side: 'ml' }
                         ];
-
                         handles.forEach(h => {
                             const handle = document.createElement('div');
                             handle.className = `proto-handle ${h.cls}`;
-                            handle.style.cssText += h.pos;
                             handle.style.cursor = h.cursor;
                             if(h.title) handle.title = h.title;
                             handle.dataset.type = h.type;
@@ -146,29 +202,21 @@
                         });
                         document.body.appendChild(OverlayManager.overlay);
                     }
-                    
                     const rect = selectedElement.getBoundingClientRect();
-                    Object.assign(OverlayManager.overlay.style, {
-                        top: `${rect.top}px`, left: `${rect.left}px`,
-                        width: `${rect.width}px`, height: `${rect.height}px`
-                    });
-
-                    // Sync Handles
+                    Object.assign(OverlayManager.overlay.style, { top: `${rect.top}px`, left: `${rect.left}px`, width: `${rect.width}px`, height: `${rect.height}px` });
+                    
                     const style = window.getComputedStyle(selectedElement);
                     const p = { t: parseFloat(style.paddingTop)||0, r: parseFloat(style.paddingRight)||0, b: parseFloat(style.paddingBottom)||0, l: parseFloat(style.paddingLeft)||0 };
                     const m = { t: parseFloat(style.marginTop)||0, r: parseFloat(style.marginRight)||0, b: parseFloat(style.marginBottom)||0, l: parseFloat(style.marginLeft)||0 };
-
                     const setPos = (type, css) => { const h = OverlayManager.overlay.querySelector(`[data-type="${type}"]`); if(h) Object.assign(h.style, css); };
-
+                    
                     setPos('resize-r',  { top: '50%', right: '-6px', transform: 'translateY(-50%)' });
                     setPos('resize-b',  { bottom: '-6px', left: '50%', transform: 'translateX(-50%)' });
                     setPos('resize-br', { bottom: '-6px', right: '-6px' });
-
                     setPos('pt', { top: `${Math.max(10, p.t)}px`, left: '50%', transform: 'translateX(-50%)' });
                     setPos('pb', { bottom: `${Math.max(10, p.b)}px`, left: '50%', transform: 'translateX(-50%)' });
                     setPos('pl', { left: `${Math.max(10, p.l)}px`, top: '50%', transform: 'translateY(-50%)' });
                     setPos('pr', { right: `${Math.max(10, p.r)}px`, top: '50%', transform: 'translateY(-50%)' });
-
                     setPos('mt', { top: `-${Math.max(15, m.t)}px`, left: '50%', transform: 'translateX(-50%)' });
                     setPos('mb', { bottom: `-${Math.max(15, m.b)}px`, left: '50%', transform: 'translateX(-50%)' });
                     setPos('ml', { left: `-${Math.max(15, m.l)}px`, top: '50%', transform: 'translateY(-50%)' });
@@ -176,15 +224,14 @@
                 },
 
                 startDrag: (e, type, handleElement) => {
-                    const startX = e.clientX;
-                    const startY = e.clientY;
+                    // HISTORY TRIGGER: SAVE STATE BEFORE DRAG STARTS
+                    HistoryManager.pushState();
+
+                    const startX = e.clientX; const startY = e.clientY;
                     const rect = selectedElement.getBoundingClientRect();
                     const style = window.getComputedStyle(selectedElement);
-                    const elStyle = selectedElement.style;
-                    const overlayStyle = OverlayManager.overlay.style;
-
-                    const startOverlayTop = rect.top;
-                    const startOverlayLeft = rect.left;
+                    const elStyle = selectedElement.style; const overlayStyle = OverlayManager.overlay.style;
+                    const startOverlayTop = rect.top; const startOverlayLeft = rect.left;
                     const initial = {
                         w: rect.width, h: rect.height,
                         pt: parseFloat(style.paddingTop)||0, pr: parseFloat(style.paddingRight)||0, pb: parseFloat(style.paddingBottom)||0, pl: parseFloat(style.paddingLeft)||0,
@@ -192,24 +239,17 @@
                     };
 
                     const onMove = (ev) => {
-                        const dx = ev.clientX - startX;
-                        const dy = ev.clientY - startY;
-
+                        const dx = ev.clientX - startX; const dy = ev.clientY - startY;
                         if (type.startsWith('resize')) {
                             let newW = initial.w, newH = initial.h;
                             if (type.includes('r')) newW = Math.max(10, initial.w + dx);
                             if (type.includes('b')) newH = Math.max(10, initial.h + dy);
-                            elStyle.width = `${newW}px`; elStyle.height = `${newH}px`;
-                            overlayStyle.width = `${newW}px`; overlayStyle.height = `${newH}px`;
+                            elStyle.width = `${newW}px`; elStyle.height = `${newH}px`; overlayStyle.width = `${newW}px`; overlayStyle.height = `${newH}px`;
                         }
-                        
-                        // Padding
                         if (type === 'pt') { const val=Math.max(0,initial.pt+dy); elStyle.paddingTop=`${val}px`; handleElement.style.top=`${Math.max(10,val)}px`; }
                         if (type === 'pb') { const val=Math.max(0,initial.pb-dy); elStyle.paddingBottom=`${val}px`; handleElement.style.bottom=`${Math.max(10,val)}px`; }
                         if (type === 'pl') { const val=Math.max(0,initial.pl+dx); elStyle.paddingLeft=`${val}px`; handleElement.style.left=`${Math.max(10,val)}px`; }
                         if (type === 'pr') { const val=Math.max(0,initial.pr-dx); elStyle.paddingRight=`${val}px`; handleElement.style.right=`${Math.max(10,val)}px`; }
-
-                        // Margin
                         if (type === 'mt') { const val=initial.mt-dy; elStyle.marginTop=`${val}px`; overlayStyle.top=`${startOverlayTop-dy}px`; handleElement.style.top=`-${Math.max(15,val)}px`; }
                         if (type === 'mb') { const val=initial.mb+dy; elStyle.marginBottom=`${val}px`; handleElement.style.bottom=`-${Math.max(15,val)}px`; }
                         if (type === 'ml') { const val=initial.ml-dx; elStyle.marginLeft=`${val}px`; overlayStyle.left=`${startOverlayLeft-dx}px`; handleElement.style.left=`-${Math.max(15,val)}px`; }
@@ -217,21 +257,14 @@
                     };
 
                     const onUp = () => {
-                        window.removeEventListener('mousemove', onMove);
-                        window.removeEventListener('mouseup', onUp);
-
+                        window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp);
                         const s = selectedElement.style;
                         const mappings = [
                             { prop: 'width', tw: 'width', pfx: 'w' }, { prop: 'height', tw: 'height', pfx: 'h' },
                             { prop: 'paddingTop', tw: 'pt', pfx: 'pt' }, { prop: 'paddingRight', tw: 'pr', pfx: 'pr' }, { prop: 'paddingBottom', tw: 'pb', pfx: 'pb' }, { prop: 'paddingLeft', tw: 'pl', pfx: 'pl' },
                             { prop: 'marginTop', tw: 'mt', pfx: 'mt' }, { prop: 'marginRight', tw: 'mr', pfx: 'mr' }, { prop: 'marginBottom', tw: 'mb', pfx: 'mb' }, { prop: 'marginLeft', tw: 'ml', pfx: 'ml' }
                         ];
-
-                        mappings.forEach(m => {
-                            const val = s[m.prop];
-                            if (val) { TwManager.update(selectedElement, m.tw, `${m.pfx}-[${val}]`); s[m.prop] = ''; }
-                        });
-
+                        mappings.forEach(m => { const val = s[m.prop]; if (val) { TwManager.update(selectedElement, m.tw, `${m.pfx}-[${val}]`); s[m.prop] = ''; } });
                         document.body.classList.add('jit-refresh');
                         setTimeout(() => { document.body.classList.remove('jit-refresh'); OverlayManager.update(); }, 50);
                     };
@@ -239,7 +272,7 @@
                 }
             };
 
-            // --- INIT BOILERPLATE ---
+            // --- INIT ---
             function makeEditable(el) {
                 if (el._figma_bound) return; el._figma_bound = true; el.dataset.editable = "true";
                 if (el.tagName === 'DIV' && el.innerHTML.trim() === '') el.classList.add('min-w-[50px]', 'min-h-[50px]', 'border', 'border-dashed', 'border-gray-300');
@@ -276,11 +309,10 @@
             initializeEnvironment();
             document.addEventListener('mousemove', (e) => { mouseX = e.clientX; mouseY = e.clientY; });
 
-            // --- MENU & SAVE ---
+            // --- HELPERS ---
             function createMenu(x, y, content) {
                 const existing = document.getElementById('proto-menu'); if (existing) existing.remove();
                 const menu = document.createElement('div'); menu.id = 'proto-menu';
-                // WIDER MENU for 2x2 GRID: min-w-[260px]
                 menu.className = `fixed z-[2147483647] bg-white border border-gray-200 shadow-2xl rounded-lg flex flex-col min-w-[260px] p-3 font-mono text-xs max-h-[80vh] overflow-y-auto`;
                 menu.style.top = `${y}px`; menu.style.left = `${x}px`;
                 content.forEach(item => menu.appendChild(item)); document.body.appendChild(menu);
@@ -298,47 +330,47 @@
             }
             createSaveButton();
 
-            // --- CONTEXT MENU (Compact 2x2 Grid) ---
+            // --- MENU (With History Support) ---
             document.addEventListener('contextmenu', (e) => {
                 if (!selectedElement) return; e.preventDefault();
-
                 const createControl = (label, category, type = 'text', options = []) => {
                     const row = document.createElement('div'); row.className = "flex justify-between items-center mb-2";
                     const lbl = document.createElement('span'); lbl.className = "text-gray-500 font-bold mr-3 w-20 truncate"; lbl.innerText = label;
                     let input;
+                    const changeHandler = (val) => {
+                        HistoryManager.pushState(); // Save History
+                        TwManager.update(selectedElement, category, val); OverlayManager.update();
+                    };
+
                     if (type === 'select') {
                         input = document.createElement('select'); input.className = "proto-input";
                         const def = document.createElement('option'); def.value = ""; def.innerText = "-"; input.appendChild(def);
                         options.forEach(opt => { const o = document.createElement('option'); o.value = opt; o.innerText = opt; input.appendChild(o); });
                         input.value = TwManager.getValue(selectedElement, category);
-                        input.onchange = () => { TwManager.update(selectedElement, category, input.value); OverlayManager.update(); };
+                        input.onchange = () => changeHandler(input.value);
                     } else {
                         input = document.createElement('input'); input.type = 'text'; input.className = "proto-input";
                         input.value = TwManager.getValue(selectedElement, category);
-                        input.onchange = () => { TwManager.update(selectedElement, category, input.value); OverlayManager.update(); };
+                        // Using 'onchange' (fires on Enter/Blur) to avoid spamming history on every keystroke
+                        input.onchange = () => changeHandler(input.value);
                     }
                     row.appendChild(lbl); row.appendChild(input); return row;
                 };
 
-                // COMPACT QUAD INPUT (2x2 Grid)
                 const createQuad = (label, categories) => {
                     const row = document.createElement('div'); row.className = "flex flex-col mb-2";
-                    
                     const header = document.createElement('div'); header.className = "flex justify-between mb-1";
-                    const lbl = document.createElement('span'); lbl.className = "text-gray-500 font-bold"; lbl.innerText = label;
-                    header.appendChild(lbl);
-                    row.appendChild(header);
-
-                    // 2x2 Grid
-                    const grid = document.createElement('div'); 
-                    grid.className = "grid grid-cols-2 gap-1"; // CSS Grid for 2 on top, 2 on bottom
-                    
+                    const lbl = document.createElement('span'); lbl.className = "text-gray-500 font-bold"; lbl.innerText = label; header.appendChild(lbl); row.appendChild(header);
+                    const grid = document.createElement('div'); grid.className = "grid grid-cols-2 gap-1"; 
                     const placeholders = ['Top', 'Right', 'Bottom', 'Left'];
                     categories.forEach((cat, i) => {
                         const input = document.createElement('input'); input.type = 'text'; input.className = "proto-input text-center";
                         input.placeholder = placeholders[i];
                         input.value = TwManager.getValue(selectedElement, cat);
-                        input.onchange = () => { TwManager.update(selectedElement, cat, input.value); OverlayManager.update(); };
+                        input.onchange = () => {
+                            HistoryManager.pushState(); // Save History
+                            TwManager.update(selectedElement, cat, input.value); OverlayManager.update();
+                        };
                         grid.appendChild(input);
                     });
                     row.appendChild(grid);
@@ -347,54 +379,67 @@
 
                 const items = []; const tag = selectedElement.tagName;
                 const title = document.createElement('div'); title.innerText = `<${tag.toLowerCase()}> Settings`; title.className = "mb-3 pb-2 border-b border-gray-100 font-bold text-gray-800 uppercase tracking-wider"; items.push(title);
-
                 if (['DIV', 'IMG', 'H1', 'P', 'SPAN', 'BUTTON'].includes(tag)) {
-                    items.push(createControl('Width', 'width')); 
-                    items.push(createControl('Height', 'height'));
-                    
-                    items.push(createControl('Pad (All)', 'padding'));
-                    items.push(createQuad('Padding (T R B L)', ['pt', 'pr', 'pb', 'pl']));
-                    
-                    items.push(createControl('Marg (All)', 'margin'));
-                    items.push(createQuad('Margin (T R B L)', ['mt', 'mr', 'mb', 'ml']));
+                    items.push(createControl('Width', 'width')); items.push(createControl('Height', 'height'));
+                    items.push(createControl('Pad (All)', 'padding')); items.push(createQuad('Padding (T R B L)', ['pt', 'pr', 'pb', 'pl']));
+                    items.push(createControl('Marg (All)', 'margin')); items.push(createQuad('Margin (T R B L)', ['mt', 'mr', 'mb', 'ml']));
                 }
-
                 if (tag === 'DIV') {
-                    items.push(createControl('Bg Color', 'bgColor'));
-                    items.push(createControl('Radius', 'rounded', 'select', OPTIONS.rounded));
-                    items.push(createControl('Border', 'borderWidth', 'select', OPTIONS.borderWidth));
-                    items.push(createControl('Direction', 'flexDir', 'select', OPTIONS.flexDir));
-                    items.push(createControl('Justify', 'justify', 'select', OPTIONS.justify));
-                    items.push(createControl('Align', 'items', 'select', OPTIONS.items));
+                    items.push(createControl('Bg Color', 'bgColor')); items.push(createControl('Radius', 'rounded', 'select', OPTIONS.rounded)); items.push(createControl('Border', 'borderWidth', 'select', OPTIONS.borderWidth)); items.push(createControl('Direction', 'flexDir', 'select', OPTIONS.flexDir)); items.push(createControl('Justify', 'justify', 'select', OPTIONS.justify)); items.push(createControl('Align', 'items', 'select', OPTIONS.items));
                 }
-                
                 if (['H1', 'P', 'SPAN', 'BUTTON', 'A'].includes(tag)) {
-                    items.push(createControl('Font', 'fontFamily', 'select', OPTIONS.fontFamily));
-                    items.push(createControl('Weight', 'fontWeight', 'select', OPTIONS.fontWeight));
-                    items.push(createControl('Size', 'textSize', 'select', OPTIONS.textSize));
-                    items.push(createControl('Align', 'textAlign', 'select', OPTIONS.textAlign));
-                    items.push(createControl('Color', 'textColor'));
-                    const txtInp = document.createElement('textarea'); txtInp.className = "bg-gray-50 border border-gray-300 rounded px-2 py-1 w-full text-xs h-16 mt-2 font-sans"; txtInp.value = selectedElement.innerText; txtInp.oninput = () => selectedElement.innerText = txtInp.value; items.push(txtInp);
+                    items.push(createControl('Font', 'fontFamily', 'select', OPTIONS.fontFamily)); items.push(createControl('Weight', 'fontWeight', 'select', OPTIONS.fontWeight)); items.push(createControl('Size', 'textSize', 'select', OPTIONS.textSize)); items.push(createControl('Align', 'textAlign', 'select', OPTIONS.textAlign)); items.push(createControl('Color', 'textColor'));
+                    const txtInp = document.createElement('textarea'); txtInp.className = "bg-gray-50 border border-gray-300 rounded px-2 py-1 w-full text-xs h-16 mt-2 font-sans"; txtInp.value = selectedElement.innerText;
+                    txtInp.onchange = () => { HistoryManager.pushState(); selectedElement.innerText = txtInp.value; }; // History on change
+                    items.push(txtInp);
                 }
-
                 const delBtn = document.createElement('button'); delBtn.innerText = "Delete Element"; delBtn.className = "mt-4 w-full bg-red-50 text-red-600 border border-red-200 rounded py-2 hover:bg-red-100";
-                delBtn.onclick = () => { if(confirm("Delete?")) { selectedElement.remove(); selectedElement = null; OverlayManager.update(); document.getElementById('proto-menu').remove(); }};
+                delBtn.onclick = () => { if(confirm("Delete?")) { 
+                    HistoryManager.pushState(); // Save History
+                    selectedElement.remove(); selectedElement = null; OverlayManager.update(); document.getElementById('proto-menu').remove(); 
+                }};
                 items.push(delBtn);
                 createMenu(e.clientX, e.clientY, items);
             });
 
+            // --- SHORTCUTS ---
             document.addEventListener('keydown', (e) => {
+                // Ctrl+Z (Undo) / Ctrl+Y (Redo)
+                if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+                    e.preventDefault();
+                    if (e.shiftKey) HistoryManager.redo();
+                    else HistoryManager.undo();
+                }
+                if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+                    e.preventDefault();
+                    HistoryManager.redo();
+                }
+
                 if (e.shiftKey && e.key.toLowerCase() === 'a') {
                     const items = ['div', 'text', 'img'].map(opt => {
                         const btn = document.createElement('button'); btn.innerText = opt.toUpperCase();
                         btn.className = "w-full text-left px-3 py-2 hover:bg-blue-50 hover:text-blue-600 rounded text-gray-700 font-bold transition-colors";
-                        btn.onclick = () => { let newEl; if (opt === 'div') { newEl = document.createElement('div'); newEl.className = "min-w-[150px] min-h-[150px] bg-gray-100 border-2 border-dashed border-gray-300 p-4 m-2 flex flex-col"; } else if (opt === 'text') { newEl = document.createElement('h1'); newEl.innerText = "New Heading"; newEl.className = "text-4xl font-bold text-gray-800 m-2"; } else if (opt === 'img') { newEl = document.createElement('img'); newEl.src = "https://via.placeholder.com/150"; newEl.className = "w-[150px] h-auto m-2"; } makeEditable(newEl); (selectedElement || document.body).appendChild(newEl); document.getElementById('proto-menu').remove(); selectedElement = newEl; OverlayManager.update(); };
+                        btn.onclick = () => { 
+                            HistoryManager.pushState(); // Save History
+                            let newEl; if (opt === 'div') { newEl = document.createElement('div'); newEl.className = "min-w-[150px] min-h-[150px] bg-gray-100 border-2 border-dashed border-gray-300 p-4 m-2 flex flex-col"; } else if (opt === 'text') { newEl = document.createElement('h1'); newEl.innerText = "New Heading"; newEl.className = "text-4xl font-bold text-gray-800 m-2"; } else if (opt === 'img') { newEl = document.createElement('img'); newEl.src = "https://via.placeholder.com/150"; newEl.className = "w-[150px] h-auto m-2"; } 
+                            makeEditable(newEl); (selectedElement || document.body).appendChild(newEl); document.getElementById('proto-menu').remove(); selectedElement = newEl; OverlayManager.update(); 
+                        };
                         return btn;
                     });
                     createMenu(mouseX, mouseY, items);
                 }
                 if (e.key === 'Escape') { const menu = document.getElementById('proto-menu'); if(menu) menu.remove(); selectedElement = null; OverlayManager.update(); }
-                if (selectedElement && e.shiftKey) { const p = selectedElement.parentNode; if (e.key === 'ArrowLeft') { const prev = selectedElement.previousElementSibling; if(prev) p.insertBefore(selectedElement, prev); } else if (e.key === 'ArrowRight') { const next = selectedElement.nextElementSibling; if(next) p.insertBefore(selectedElement, next.nextElementSibling); } OverlayManager.update(); }
+                if (selectedElement && e.shiftKey) { 
+                    const p = selectedElement.parentNode;
+                    // Note: We should probably push history here too, but reordering with arrows is spammy. 
+                    // Let's push only on first move or debounce? For simplicity, pushing every move (might fill stack).
+                    // Better UX: Push history, then move.
+                    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') HistoryManager.pushState();
+                    
+                    if (e.key === 'ArrowLeft') { const prev = selectedElement.previousElementSibling; if(prev) p.insertBefore(selectedElement, prev); } 
+                    else if (e.key === 'ArrowRight') { const next = selectedElement.nextElementSibling; if(next) p.insertBefore(selectedElement, next.nextElementSibling); } 
+                    OverlayManager.update(); 
+                }
             });
         })();
     </script>
