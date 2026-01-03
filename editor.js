@@ -440,15 +440,18 @@
     });
     // --- KEY RESET LISTENER (LAG FIX) ---
     document.addEventListener('keyup', (e) => {
-        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') isReordering = false;
+        if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+            isReordering = false;
+        }
     });
 
     // --- SHORTCUTS ---
     document.addEventListener('keydown', (e) => {
+        // UNDO / REDO
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) HistoryManager.redo(); else HistoryManager.undo(); }
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); HistoryManager.redo(); }
         
-        // Shift+S (Source)
+        // SAVE SOURCE (Shift+S)
         if (e.shiftKey && e.key === 'S' && !e.ctrlKey && !e.metaKey) {
             e.preventDefault();
             selectedElement = null; OverlayManager.update(); BreadcrumbManager.update(); const menu = document.getElementById('proto-menu'); if (menu) menu.remove();
@@ -456,7 +459,7 @@
             a.download = "project-source.html"; document.body.appendChild(a); a.click(); document.body.removeChild(a);
         }
         
-        // Ctrl+Shift+S (Export Clean)
+        // EXPORT CLEAN (Ctrl+Shift+S)
         if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'S') {
             e.preventDefault();
             const clone = document.documentElement.cloneNode(true);
@@ -472,6 +475,7 @@
             a.download = "export-clean.html"; document.body.appendChild(a); a.click(); document.body.removeChild(a);
         }
 
+        // CREATE MENU (Shift+A)
         if (e.shiftKey && e.key.toLowerCase() === 'a') {
             const existing = document.getElementById('proto-menu'); if (existing) existing.remove();
             const menu = document.createElement('div'); menu.id = 'proto-menu';
@@ -489,19 +493,80 @@
             });
             items.forEach(i => menu.appendChild(i)); document.body.appendChild(menu);
         }
+
+        // ESCAPE (Deselect)
         if (e.key === 'Escape') { const menu = document.getElementById('proto-menu'); if(menu) menu.remove(); selectedElement = null; OverlayManager.update(); BreadcrumbManager.update(); }
         
-        // LAG FIX: Sequence Mode for Reordering
-        if (selectedElement && e.shiftKey) { 
-            if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-                if (!isReordering) {
-                    HistoryManager.pushState(); // Save only ONCE per hold
-                    isReordering = true;
-                }
+        // --- ARROW KEYS LOGIC ---
+        if (selectedElement && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+            e.preventDefault();
+
+            // HELPER: Check if element is a valid user element (not UI, not script)
+            const isValidTarget = (el) => {
+                if (!el) return false;
+                if (el.tagName === 'SCRIPT' || el.tagName === 'STYLE') return false;
+                if (el.id === 'proto-menu' || el.classList.contains('proto-overlay') || 
+                    el.classList.contains('proto-handle') || el.classList.contains('proto-breadcrumbs')) return false;
+                return true;
+            };
+
+            // CASE 1: REORDER / MOVE (Shift + Arrow)
+            if (e.shiftKey) {
+                const k = e.key;
+                if (!isReordering) { HistoryManager.pushState(); isReordering = true; }
+
                 const p = selectedElement.parentNode;
-                if (e.key === 'ArrowLeft') { const prev = selectedElement.previousElementSibling; if(prev) p.insertBefore(selectedElement, prev); } 
-                else if (e.key === 'ArrowRight') { const next = selectedElement.nextElementSibling; if(next) p.insertBefore(selectedElement, next.nextElementSibling); } 
-                OverlayManager.update(); 
+                const next = selectedElement.nextElementSibling;
+                const prev = selectedElement.previousElementSibling;
+
+                if (k === 'ArrowLeft' && prev) { p.insertBefore(selectedElement, prev); } 
+                else if (k === 'ArrowRight' && next) { p.insertBefore(selectedElement, next.nextElementSibling); }
+                else if (k === 'ArrowUp' && p !== document.body) { p.parentNode.insertBefore(selectedElement, p.nextElementSibling); }
+                else if (k === 'ArrowDown' && next && isValidTarget(next)) {
+                    const voidTags = ['IMG', 'INPUT', 'BR', 'HR', 'META', 'LINK'];
+                    if (!voidTags.includes(next.tagName)) {
+                        next.insertBefore(selectedElement, next.firstChild);
+                    }
+                }
+                OverlayManager.update(); BreadcrumbManager.update();
+            } 
+            
+            // CASE 2: TRAVERSE SELECTION (Arrow Only)
+            else {
+                let target = null;
+                const k = e.key;
+
+                if (k === 'ArrowUp') {
+                    // Go to Parent
+                    if (selectedElement.parentElement && selectedElement.parentElement !== document.documentElement) {
+                        target = selectedElement.parentElement;
+                    }
+                } else if (k === 'ArrowDown') {
+                    // Go to First Child
+                    let child = selectedElement.firstElementChild;
+                    while (child && !isValidTarget(child)) { child = child.nextElementSibling; } // Skip invalid children
+                    if (child) target = child;
+                } else if (k === 'ArrowLeft') {
+                    // Go to Previous Sibling
+                    let prev = selectedElement.previousElementSibling;
+                    while (prev && !isValidTarget(prev)) { prev = prev.previousElementSibling; } // Skip invalid siblings
+                    if (prev) target = prev;
+                } else if (k === 'ArrowRight') {
+                    // Go to Next Sibling
+                    let next = selectedElement.nextElementSibling;
+                    while (next && !isValidTarget(next)) { next = next.nextElementSibling; } // Skip invalid siblings
+                    if (next) target = next;
+                }
+
+                if (target) {
+                    // Select the new target
+                    const menu = document.getElementById('proto-menu'); if (menu) menu.remove();
+                    selectedElement = target;
+                    // Ensure the new target is initialized
+                    makeEditable(selectedElement);
+                    OverlayManager.update();
+                    BreadcrumbManager.update();
+                }
             }
         }
     });
