@@ -2,20 +2,56 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Figma-in-a-tag: Tailwind Native</title>
+    <title>Figma-in-a-tag: Integration Complete</title>
 </head>
 <body class="p-10">
-    <div style="background-color: #ffcccc; border: 5px solid red; padding: 50px; font-family: serif;">
-        <h1 style="color: darkred; font-size: 40px;">Legacy Content</h1>
-        <p>This formatting will be nuked and replaced with Tailwind defaults.</p>
+    <div>
+        <h1>This was here before.</h1>
+        <p>Try clicking me! I am now editable.</p>
+        <img src="https://i.pinimg.com/736x/45/7b/f5/457bf5498d68c5bd6ead7fba3fd3bc43.jpg" alt="Old Image">
     </div>
 
     <script>
         (function() {
-            // --- CONSTANTS & CONFIG ---
+            // --- CONSTANTS ---
             const TAILWIND_CDN = 'https://cdn.tailwindcss.com';
             
-            // --- PHASE 1: THE NUKE & INSTALL ---
+            // --- STATE MANAGEMENT ---
+            let selectedElement = null;
+            let mouseX = 0, mouseY = 0;
+
+            // --- CORE FUNCTION: MAKE ELEMENT INTERACTIVE ---
+            // This applies the "brain" to both new and old elements
+            function makeEditable(el) {
+                // Prevent double-attaching
+                if (el.dataset.editable === "true") return;
+                el.dataset.editable = "true";
+
+                // Add default visibility if element is totally empty/collapsed
+                // (Optional: helps finding "nuked" empty divs)
+                if (el.tagName === 'DIV' && el.innerHTML.trim() === '') {
+                    el.classList.add('min-w-[50px]', 'min-h-[50px]', 'border', 'border-dashed', 'border-gray-300');
+                }
+
+                el.addEventListener('click', (ev) => {
+                    ev.stopPropagation(); // Stop bubbling (don't select parent)
+                    
+                    // Cleanup UI
+                    const menu = document.getElementById('proto-menu');
+                    if (menu) menu.remove();
+
+                    // Deselect previous
+                    if (selectedElement) {
+                        selectedElement.classList.remove('outline', 'outline-2', 'outline-blue-500', 'outline-offset-2');
+                    }
+
+                    // Select new
+                    selectedElement = el;
+                    selectedElement.classList.add('outline', 'outline-2', 'outline-blue-500', 'outline-offset-2');
+                });
+            }
+
+            // --- PHASE 1: INITIALIZATION & SCANNING ---
             function initializeEnvironment() {
                 console.log("⚙️ Initializing Environment...");
                 
@@ -25,9 +61,13 @@
                 });
 
                 if (!hasTailwind) {
+                    console.log("☢️ Nuking styles...");
                     nukeStyles();
                     injectTailwind();
                 }
+
+                // THE SCANNER: Hydrate existing DOM
+                scanAndHydrate();
             }
 
             function nukeStyles() {
@@ -42,50 +82,46 @@
             function injectTailwind() {
                 const script = document.createElement('script');
                 script.src = TAILWIND_CDN;
-                
-                // THE WAKE UP CALL
                 script.onload = () => {
-                    console.log("🎨 Tailwind Loaded. Waking up JIT Engine...");
-                    // We toggle a class on the body to force Tailwind's MutationObserver to trigger a scan immediately
+                    // Wake up JIT
                     document.body.classList.add('jit-wake-up');
                     setTimeout(() => document.body.classList.remove('jit-wake-up'), 0);
                 };
-                
                 document.head.appendChild(script);
             }
 
+            function scanAndHydrate() {
+                console.log("🔍 Scanning DOM for pre-existing elements...");
+                // Select everything in body
+                const all = document.body.getElementsByTagName('*');
+                
+                for (let el of all) {
+                    // Filter out our own UI components (scripts, menus, buttons)
+                    if (el.tagName === 'SCRIPT') continue;
+                    if (el.id && el.id.startsWith('proto-')) continue;
+                    
+                    makeEditable(el);
+                }
+            }
+
+            // Run Startup
             initializeEnvironment();
 
-            // --- PHASE 2: THE EDITOR UI ---
-            let mouseX = 0, mouseY = 0;
-            let selectedElement = null;
 
+            // --- HELPER: MOUSE TRACKING ---
             document.addEventListener('mousemove', (e) => {
                 mouseX = e.clientX;
                 mouseY = e.clientY;
             });
 
-            // --- TAILWIND CLASS MANAGER ---
+            // --- TAILWIND CLASS MANAGER (Logic unchanged) ---
             const TwManager = {
                 patterns: {
-                    width: /w-\S+/,
-                    height: /h-\S+/,
-                    minWidth: /min-w-\S+/,
-                    minHeight: /min-h-\S+/,
-                    maxWidth: /max-w-\S+/,
-                    maxHeight: /max-h-\S+/,
-                    padding: /p[axylrbt]?-\S+/, 
-                    margin: /m[axylrbt]?-\S+/,
-                    bgColor: /bg-\S+/,
-                    textColor: /text-(?!xs|sm|base|lg|xl|\dxl)\S+/, 
-                    textSize: /text-(xs|sm|base|lg|xl|\dxl|\[\d+px\])/,
-                    font: /font-\S+/,
-                    rounded: /rounded-\S*/,
-                    border: /border-\S*/,
-                    flexDir: /flex-(row|col)\S*/,
-                    justify: /justify-\S+/,
-                    items: /items-\S+/,
-                    textAlign: /text-(left|center|right|justify)/
+                    width: /w-\S+/, height: /h-\S+/, minWidth: /min-w-\S+/, minHeight: /min-h-\S+/,
+                    maxWidth: /max-w-\S+/, maxHeight: /max-h-\S+/, padding: /p[axylrbt]?-\S+/, margin: /m[axylrbt]?-\S+/,
+                    bgColor: /bg-\S+/, textColor: /text-(?!xs|sm|base|lg|xl|\dxl)\S+/, textSize: /text-(xs|sm|base|lg|xl|\dxl|\[\d+px\])/,
+                    font: /font-\S+/, rounded: /rounded-\S*/, border: /border-\S*/, flexDir: /flex-(row|col)\S*/,
+                    justify: /justify-\S+/, items: /items-\S+/, textAlign: /text-(left|center|right|justify)/
                 },
                 getValue: (el, category) => {
                     const match = el.className.match(TwManager.patterns[category]);
@@ -113,60 +149,41 @@
                 document.body.appendChild(menu);
             }
 
-            // --- PERSISTENCE: SAVE BUTTON ---
+            // --- UI: SAVE BUTTON ---
             function createSaveButton() {
                 const btn = document.createElement('button');
                 btn.innerText = "💾 Save Project";
                 btn.id = "proto-save-btn";
-                // Fixed bottom-right
                 btn.className = "fixed bottom-5 right-5 z-[2147483647] bg-blue-600 text-white font-bold py-2 px-4 rounded shadow-lg hover:bg-blue-700 transition-colors";
-                
                 btn.onclick = () => {
-                    // 1. Cleanup before saving
-                    // Remove the menu if open
+                    // Cleanup
                     const menu = document.getElementById('proto-menu');
                     if (menu) menu.remove();
-                    
-                    // Remove the save button itself from the DOM temporarily (so it doesn't get saved)
                     btn.remove();
+                    if (selectedElement) selectedElement.classList.remove('outline', 'outline-2', 'outline-blue-500', 'outline-offset-2');
 
-                    // Remove selection outline
-                    if (selectedElement) {
-                        selectedElement.classList.remove('outline', 'outline-2', 'outline-blue-500', 'outline-offset-2');
-                    }
-
-                    // 2. Capture the HTML
+                    // Export
                     const docContent = document.documentElement.outerHTML;
-
-                    // 3. Create Blob & Download
                     const blob = new Blob([docContent], {type: "text/html"});
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
                     a.download = "index.html";
-                    document.body.appendChild(a); // append to body to ensure click works in firefox
+                    document.body.appendChild(a);
                     a.click();
                     
-                    // 4. Restore UI
+                    // Restore
                     document.body.removeChild(a);
                     URL.revokeObjectURL(url);
-                    
-                    // Restore outline if needed (optional)
-                    if (selectedElement) {
-                        selectedElement.classList.add('outline', 'outline-2', 'outline-blue-500', 'outline-offset-2');
-                    }
-                    
-                    // Re-add the save button
+                    if (selectedElement) selectedElement.classList.add('outline', 'outline-2', 'outline-blue-500', 'outline-offset-2');
                     document.body.appendChild(btn);
                 };
-
                 document.body.appendChild(btn);
             }
-            // Initialize the save button immediately
             createSaveButton();
 
 
-            // --- RIGHT CLICK: PROPERTY EDITOR ---
+            // --- EVENT: RIGHT CLICK (Property Editor) ---
             document.addEventListener('contextmenu', (e) => {
                 if (!selectedElement) return;
                 e.preventDefault();
@@ -174,7 +191,6 @@
                 const createInput = (label, category, isSelect = false, options = []) => {
                     const row = document.createElement('div');
                     row.className = "flex justify-between items-center mb-2";
-                    
                     const lbl = document.createElement('span');
                     lbl.className = "text-gray-500 font-bold mr-3 w-16";
                     lbl.innerText = label;
@@ -185,35 +201,28 @@
                         input.className = "bg-gray-50 border border-gray-300 rounded px-2 py-1 flex-1 focus:outline-none focus:border-blue-500";
                         options.forEach(opt => {
                             const o = document.createElement('option');
-                            o.value = opt;
-                            o.innerText = opt;
-                            input.appendChild(o);
+                            o.value = opt; o.innerText = opt; input.appendChild(o);
                         });
                         input.value = TwManager.getValue(selectedElement, category);
                         input.onchange = () => TwManager.update(selectedElement, category, input.value);
                     } else {
                         input = document.createElement('input');
                         input.type = 'text';
-                        input.placeholder = "e.g. w-full";
                         input.className = "bg-gray-50 border border-gray-300 rounded px-2 py-1 flex-1 focus:outline-none focus:border-blue-500";
                         input.value = TwManager.getValue(selectedElement, category);
                         input.onchange = () => TwManager.update(selectedElement, category, input.value);
                     }
-
-                    row.appendChild(lbl);
-                    row.appendChild(input);
-                    return row;
+                    row.appendChild(lbl); row.appendChild(input); return row;
                 };
 
                 const items = [];
                 const tag = selectedElement.tagName;
-
                 const title = document.createElement('div');
                 title.innerText = `<${tag.toLowerCase()}> Settings`;
                 title.className = "mb-3 pb-2 border-b border-gray-100 font-bold text-gray-800 uppercase tracking-wider";
                 items.push(title);
 
-                if (tag === 'DIV' || tag === 'IMG') {
+                if (tag === 'DIV' || tag === 'IMG' || tag === 'H1' || tag === 'P') { // Expanded to include P
                     items.push(createInput('Width', 'width'));
                     items.push(createInput('Height', 'height'));
                     items.push(createInput('Padding', 'padding'));
@@ -221,75 +230,34 @@
                 }
 
                 if (tag === 'DIV') {
-                    items.push(createInput('Min W', 'minWidth'));
-                    items.push(createInput('Min H', 'minHeight'));
-                    items.push(createInput('Bg', 'bgColor'));
-                    items.push(createInput('Radius', 'rounded'));
+                    items.push(createInput('Min W', 'minWidth')); items.push(createInput('Min H', 'minHeight'));
+                    items.push(createInput('Bg', 'bgColor')); items.push(createInput('Radius', 'rounded'));
                     items.push(createInput('Border', 'border'));
-                    
-                    const flexLabel = document.createElement('div');
-                    flexLabel.innerText = "Layout (Flex)";
-                    flexLabel.className = "mt-2 mb-1 text-gray-400 font-bold text-[10px] uppercase";
-                    items.push(flexLabel);
-                    
-                    items.push(createInput('Dir', 'flexDir', true, ['flex-row', 'flex-col', 'flex-row-reverse', 'flex-col-reverse']));
-                    items.push(createInput('Justify', 'justify', true, ['justify-start', 'justify-end', 'justify-center', 'justify-between', 'justify-evenly']));
-                    items.push(createInput('Align', 'items', true, ['items-start', 'items-end', 'items-center', 'items-stretch']));
+                    items.push(createInput('Dir', 'flexDir', true, ['flex-row', 'flex-col']));
+                    items.push(createInput('Justify', 'justify', true, ['justify-start', 'justify-end', 'justify-center', 'justify-between']));
+                    items.push(createInput('Align', 'items', true, ['items-start', 'items-end', 'items-center']));
                 }
 
-                if (tag === 'H1') {
-                    items.push(createInput('Text Size', 'textSize'));
-                    items.push(createInput('Color', 'textColor'));
-                    items.push(createInput('Align', 'textAlign', true, ['text-left', 'text-center', 'text-right', 'text-justify']));
-                    items.push(createInput('Font', 'font'));
-                    items.push(createInput('Padding', 'padding'));
-                    items.push(createInput('Margin', 'margin'));
-                    
-                    const txtRow = document.createElement('div');
-                    txtRow.className = "flex flex-col mb-2";
-                    const txtLbl = document.createElement('span');
-                    txtLbl.className = "text-gray-500 font-bold mb-1";
-                    txtLbl.innerText = "Content";
+                if (tag === 'H1' || tag === 'P' || tag === 'SPAN') {
+                    items.push(createInput('Size', 'textSize')); items.push(createInput('Color', 'textColor'));
+                    items.push(createInput('Align', 'textAlign', true, ['text-left', 'text-center', 'text-right']));
                     const txtInp = document.createElement('textarea');
-                    txtInp.className = "bg-gray-50 border border-gray-300 rounded px-2 py-1 w-full text-xs h-16";
+                    txtInp.className = "bg-gray-50 border border-gray-300 rounded px-2 py-1 w-full text-xs h-16 mt-2";
                     txtInp.value = selectedElement.innerText;
                     txtInp.oninput = () => selectedElement.innerText = txtInp.value;
-                    txtRow.appendChild(txtLbl);
-                    txtRow.appendChild(txtInp);
-                    items.push(txtRow);
-                }
-
-                if (tag === 'IMG') {
-                     const srcRow = document.createElement('div');
-                     srcRow.className = "flex justify-between items-center mb-2";
-                     const srcLbl = document.createElement('span');
-                     srcLbl.className = "text-gray-500 font-bold mr-3 w-16";
-                     srcLbl.innerText = "Src";
-                     const srcInp = document.createElement('input');
-                     srcInp.className = "bg-gray-50 border border-gray-300 rounded px-2 py-1 flex-1";
-                     srcInp.value = selectedElement.src;
-                     srcInp.oninput = () => selectedElement.src = srcInp.value;
-                     srcRow.appendChild(srcLbl);
-                     srcRow.appendChild(srcInp);
-                     items.push(srcRow);
+                    items.push(txtInp);
                 }
 
                 const delBtn = document.createElement('button');
                 delBtn.innerText = "Delete Element";
-                delBtn.className = "mt-4 w-full bg-red-50 text-red-600 border border-red-200 rounded py-2 hover:bg-red-100 transition-colors";
-                delBtn.onclick = () => {
-                    if (confirm("Delete?")) {
-                        selectedElement.remove();
-                        selectedElement = null;
-                        document.getElementById('proto-menu').remove();
-                    }
-                };
+                delBtn.className = "mt-4 w-full bg-red-50 text-red-600 border border-red-200 rounded py-2 hover:bg-red-100";
+                delBtn.onclick = () => { if(confirm("Delete?")) { selectedElement.remove(); selectedElement = null; document.getElementById('proto-menu').remove(); }};
                 items.push(delBtn);
 
                 createMenu(e.clientX, e.clientY, items);
             });
 
-            // --- SHIFT+A: CREATE ---
+            // --- EVENT: KEYDOWN (Shift+A & Shortcuts) ---
             document.addEventListener('keydown', (e) => {
                 if (e.shiftKey && e.key.toLowerCase() === 'a') {
                     const items = ['div', 'text', 'img'].map(opt => {
@@ -298,35 +266,23 @@
                         btn.className = "w-full text-left px-3 py-2 hover:bg-blue-50 hover:text-blue-600 rounded text-gray-700 font-bold transition-colors";
                         btn.onclick = () => {
                             let newEl;
-                            if (opt === 'div') {
-                                newEl = document.createElement('div');
-                                newEl.className = "min-w-[150px] min-h-[150px] bg-gray-100 border-2 border-dashed border-gray-300 p-4 m-2 flex flex-col";
-                            } else if (opt === 'text') {
-                                newEl = document.createElement('h1');
-                                newEl.innerText = "Edit Me";
-                                newEl.className = "text-4xl font-bold text-gray-800 m-2";
-                            } else if (opt === 'img') {
-                                newEl = document.createElement('img');
-                                newEl.src = "https://via.placeholder.com/150";
-                                newEl.className = "w-[150px] h-auto object-cover m-2";
-                            }
+                            if (opt === 'div') newEl = document.createElement('div');
+                            else if (opt === 'text') { newEl = document.createElement('h1'); newEl.innerText = "New Heading"; }
+                            else if (opt === 'img') { newEl = document.createElement('img'); newEl.src = "https://via.placeholder.com/150"; }
+                            
+                            // RULE 2: Tailwind Defaults
+                            if (opt === 'div') newEl.className = "min-w-[150px] min-h-[150px] bg-gray-100 border-2 border-dashed border-gray-300 p-4 m-2 flex flex-col";
+                            if (opt === 'text') newEl.className = "text-4xl font-bold text-gray-800 m-2";
+                            if (opt === 'img') newEl.className = "w-[150px] h-auto m-2";
 
-                            newEl.addEventListener('click', (ev) => {
-                                ev.stopPropagation();
-                                const menu = document.getElementById('proto-menu');
-                                if (menu) menu.remove();
-                                
-                                if (selectedElement) {
-                                    selectedElement.classList.remove('outline', 'outline-2', 'outline-blue-500', 'outline-offset-2');
-                                }
-                                
-                                selectedElement = newEl;
-                                selectedElement.classList.add('outline', 'outline-2', 'outline-blue-500', 'outline-offset-2');
-                            });
+                            // USE THE SHARED BRAIN
+                            makeEditable(newEl);
 
                             const parent = selectedElement || document.body;
                             parent.appendChild(newEl);
                             document.getElementById('proto-menu').remove();
+                            // Trigger click to select immediately
+                            newEl.click();
                         };
                         return btn;
                     });
