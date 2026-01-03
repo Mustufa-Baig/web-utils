@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Prototype</title>
+</head>
+<body>
+    <script>
+        let mouseX = 0, mouseY = 0;
+        let selectedElement = null;
+        
+        document.addEventListener('mousemove', (e) => {
+            mouseX = e.clientX;
+            mouseY = e.clientY;
+        });
+
+        // Right-click Context Menu
+        document.addEventListener('contextmenu', (e) => {
+            if (!selectedElement) return; 
+            e.preventDefault(); 
+            
+            const existing = document.getElementById('proto-menu');
+            if (existing) existing.remove();
+
+            const menu = document.createElement('div');
+            menu.id = 'proto-menu';
+            Object.assign(menu.style, {
+                position: 'absolute',
+                left: `${e.clientX}px`,
+                top: `${e.clientY}px`,
+                backgroundColor: 'white',
+                border: '1px solid black',
+                padding: '5px',
+                zIndex: '1000',
+                display: 'flex',
+                flexDirection: 'column',
+                cursor: 'default',
+                minWidth: '200px',
+                boxShadow: '2px 2px 5px rgba(0,0,0,0.2)'
+            });
+
+            let props = [];
+            const tag = selectedElement.tagName;
+            const computedStyle = window.getComputedStyle(selectedElement);
+            
+            if (tag === 'DIV') {
+                props = [
+                    { label: 'Min Width', css: 'minWidth' },
+                    { label: 'Min Height', css: 'minHeight' },
+                    { label: 'Max Width', css: 'maxWidth' },
+                    { label: 'Max Height', css: 'maxHeight' },
+                    { label: 'Border', css: 'border'},
+                    { label: 'Radius', css: 'borderRadius'},
+                    { label: 'Bg Color', css: 'backgroundColor' },
+                    { label: 'Padding', css: 'padding' },
+                    { label: 'Margin', css: 'margin' },
+                    // Added Text Align
+                    { label: 'Text Align', css: 'textAlign', type: 'select', options: ['left', 'center', 'right', 'justify'] },
+                    { label: 'Direction', css: 'flexDirection', type: 'select', options: ['row', 'column', 'row-reverse', 'column-reverse'] },
+                    { label: 'Justify', css: 'justifyContent', type: 'select', options: ['flex-start', 'flex-end', 'center', 'space-between', 'space-around', 'space-evenly'] },
+                    { label: 'Align', css: 'alignItems', type: 'select', options: ['stretch', 'flex-start', 'flex-end', 'center', 'baseline'] }
+                ];
+            } else if (tag === 'H1') {
+                props = [
+                    { label: 'Text', prop: 'innerText' },
+                    { label: 'Color', css: 'color' }, 
+                    // Added Text Align
+                    { label: 'Align', css: 'textAlign', type: 'select', options: ['left', 'center', 'right', 'justify'] },    
+                    { label: 'Size', css: 'fontSize' },
+                    { label: 'Font', css: 'fontFamily' },
+                    { label: 'Padding', css: 'padding' },
+                    { label: 'Margin', css: 'margin' }
+                ];
+            } else if (tag === 'IMG') {
+                props = [
+                    { label: 'Img', attr: 'src' },
+                    { label: 'Width', css: 'width' },
+                    { label: 'Height', css: 'height' },
+                    { label: 'Padding', css: 'padding' },
+                    { label: 'Margin', css: 'margin' }
+                ];
+            }
+
+            props.forEach(p => {
+                const row = document.createElement('div');
+                Object.assign(row.style, { display: 'flex', justifyContent: 'space-between', margin: '4px 0', alignItems: 'center' });
+
+                const lbl = document.createElement('span');
+                lbl.innerText = p.label;
+                lbl.style.fontSize = '12px';
+                lbl.style.marginRight = '10px';
+
+                let inputEl;
+
+                if (p.type === 'select') {
+                    inputEl = document.createElement('select');
+                    Object.assign(inputEl.style, { width: '100px', fontSize: '12px' });
+                    p.options.forEach(opt => {
+                        const option = document.createElement('option');
+                        option.value = opt;
+                        option.innerText = opt;
+                        inputEl.appendChild(option);
+                    });
+                } else {
+                    inputEl = document.createElement('input');
+                    inputEl.type = 'text';
+                    Object.assign(inputEl.style, { width: '80px', fontSize: '12px' });
+                }
+
+                let currentVal;
+                if (p.attr === 'src') {
+                    currentVal = selectedElement.getAttribute('src') || '';
+                } else if (p.prop === 'innerText') {
+                    currentVal = selectedElement.innerText;
+                } else {
+                    currentVal = selectedElement.style[p.css] || computedStyle[p.css];
+                }
+                
+                inputEl.value = currentVal;
+
+                const updateFunc = () => {
+                   if (p.type !== 'select' && inputEl.value.trim() === '') return;
+                    
+                    if (p.attr === 'src') {
+                        selectedElement.src = inputEl.value;
+                    } else if (p.prop === 'innerText') {
+                        selectedElement.innerText = inputEl.value;
+                    } else {
+                        selectedElement.style[p.css] = inputEl.value;
+                    } 
+                };
+
+                inputEl.oninput = updateFunc;
+                inputEl.onchange = updateFunc;
+
+                row.appendChild(lbl);
+                row.appendChild(inputEl);
+                menu.appendChild(row);
+            });
+
+            // Delete Button
+            const delBtn = document.createElement('button');
+            delBtn.innerText = "Delete Element";
+            Object.assign(delBtn.style, {
+                marginTop: '10px',
+                backgroundColor: '#ffebee',
+                border: '1px solid #ffcdd2',
+                color: '#c62828',
+                padding: '5px',
+                cursor: 'pointer',
+                width: '100%'
+            });
+            delBtn.onclick = () => {
+                if (confirm("Are you sure you want to delete this element?")) {
+                    selectedElement.remove();
+                    selectedElement = null;
+                    menu.remove();
+                }
+            };
+            menu.appendChild(delBtn);
+
+            document.body.appendChild(menu);
+        });
+
+        document.addEventListener('keydown', (e) => {
+            // Shift + A: Create Menu
+            if (e.shiftKey && e.key.toLowerCase() === 'a') {
+                const existing = document.getElementById('proto-menu');
+                if (existing) existing.remove();
+
+                const menu = document.createElement('div');
+                menu.id = 'proto-menu';
+                Object.assign(menu.style, {
+                    position: 'absolute',
+                    left: `${mouseX}px`,
+                    top: `${mouseY}px`,
+                    backgroundColor: 'white',
+                    border: '1px solid black',
+                    padding: '5px',
+                    zIndex: '1000',
+                    display: 'flex',
+                    flexDirection: 'column'
+                });
+
+                ['div', 'text', 'img'].forEach(opt => {
+                    const btn = document.createElement('button');
+                    btn.innerText = opt;
+                    btn.style.margin = '2px 0';
+                    btn.onclick = () => {
+                        let newEl;
+                        if (opt === 'div') {
+                            newEl = document.createElement('div');
+                            newEl.style.cssText = "min-width: 100px; min-height: 100px; background: #fff; border: 1px dashed #000; margin: 10px; display: flex; flex-direction: column; padding: 10px;"; 
+                        } else if (opt === 'text') {
+                            newEl = document.createElement('h1');
+                            newEl.innerText = "New Heading";
+                        } else if (opt === 'img') {
+                            newEl = document.createElement('img');
+                            newEl.src = "https://via.placeholder.com/150"; 
+                        }
+                        
+                        newEl.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            
+                            const existingMenu = document.getElementById('proto-menu');
+                            if (existingMenu) existingMenu.remove();
+
+                            if (selectedElement === newEl) return;
+
+                            if (selectedElement) {
+                                selectedElement.style.outline = '';
+                            }
+
+                            selectedElement = newEl;
+                            newEl.style.outline = '2px solid blue';
+                        });
+
+                        const parent = selectedElement || document.body;
+                        parent.appendChild(newEl);
+                        
+                        menu.remove();
+                    };
+                    menu.appendChild(btn);
+                });
+
+                document.body.appendChild(menu);
+            }
+
+            // Shift + Arrows: Reorder Elements
+            if (selectedElement && e.shiftKey) {
+                const parent = selectedElement.parentNode;
+                
+                if (e.key === 'ArrowLeft') {
+                    const prev = selectedElement.previousElementSibling;
+                    if (prev) {
+                        parent.insertBefore(selectedElement, prev);
+                    }
+                } else if (e.key === 'ArrowRight') {
+                    const next = selectedElement.nextElementSibling;
+                    if (next) {
+                        parent.insertBefore(selectedElement, next.nextElementSibling);
+                    }
+                }
+            }
+
+            // Escape: Deselect / Close Menu
+            if (e.key === 'Escape') {
+                const menu = document.getElementById('proto-menu');
+                if (menu) menu.remove();
+
+                if (selectedElement) {
+                    selectedElement.style.outline = '';
+                    selectedElement = null;
+                }
+            }
+        });
+    </script>
+</body>
+</html>
