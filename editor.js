@@ -43,18 +43,21 @@
         .proto-sep { opacity: 0.4; }
     `;
 
+    // --- TAILWIND UTILITY OPTIONS ---
     const OPTIONS = {
-        textSize: ['text-xs', 'text-sm', 'text-base', 'text-lg', 'text-xl', 'text-2xl', 'text-3xl', 'text-4xl'],
+        textSize: ['text-xs', 'text-sm', 'text-base', 'text-lg', 'text-xl', 'text-2xl', 'text-3xl', 'text-4xl', 'text-5xl', 'text-6xl'],
         fontFamily: ['font-sans', 'font-serif', 'font-mono'],
-        fontWeight: ['font-thin', 'font-normal', 'font-bold', 'font-black'],
-        rounded: ['rounded-none', 'rounded-sm', 'rounded', 'rounded-md', 'rounded-lg', 'rounded-full'],
+        fontWeight: ['font-thin', 'font-extralight', 'font-light', 'font-normal', 'font-medium', 'font-semibold', 'font-bold', 'font-extrabold', 'font-black'],
+        rounded: ['rounded-none', 'rounded-sm', 'rounded', 'rounded-md', 'rounded-lg', 'rounded-xl', 'rounded-2xl', 'rounded-full'],
         borderWidth: ['border-0', 'border', 'border-2', 'border-4', 'border-8'],
         textAlign: ['text-left', 'text-center', 'text-right', 'text-justify'],
-        flexDir: ['flex-row', 'flex-col'],
-        justify: ['justify-start', 'justify-end', 'justify-center', 'justify-between'],
-        items: ['items-start', 'items-end', 'items-center']
+        // Flex Options
+        flexDir: ['flex-row', 'flex-col', 'flex-row-reverse', 'flex-col-reverse'],
+        // Added missing justify options
+        justify: ['justify-start', 'justify-end', 'justify-center', 'justify-between', 'justify-around', 'justify-evenly'],
+        // Added missing align options
+        items: ['items-start', 'items-end', 'items-center', 'items-baseline', 'items-stretch']
     };
-
     let selectedElement = null;
     let mouseX = 0, mouseY = 0;
     
@@ -302,9 +305,12 @@
     initializeEnvironment();
     document.addEventListener('mousemove', (e) => { mouseX = e.clientX; mouseY = e.clientY; });
 
-    // --- CONTEXT MENU (Cascading) ---
+    // --- CONTEXT MENU (With Flex Toggle) ---
     document.addEventListener('contextmenu', (e) => {
-        if (!selectedElement) return; e.preventDefault();
+        if (!selectedElement) return; 
+        e.preventDefault();
+
+        // 1. Helper: Flyout
         const createFlyout = (label, children) => {
             const row = document.createElement('div');
             row.className = "group relative px-3 py-2 hover:bg-blue-50 cursor-default flex justify-between items-center text-gray-700 font-bold text-[11px] border-b border-gray-50 last:border-0";
@@ -315,8 +321,26 @@
             row.innerHTML = `<span>${label}</span><span class="text-gray-400 text-[8px]">${arrow}</span>`;
             const flyout = document.createElement('div');
             flyout.className = `hidden group-hover:block absolute top-0 w-[240px] bg-white border border-gray-200 shadow-xl rounded-lg p-2 z-[50] ${flyoutPosClass}`;
-            children.forEach(c => flyout.appendChild(c)); row.appendChild(flyout); return row;
+            children.forEach(c => flyout.appendChild(c)); 
+            row.appendChild(flyout); 
+            return row;
         };
+
+        // 2. Helper: Checkbox (NEW)
+        const createCheckbox = (label, checked, onChange) => {
+            const row = document.createElement('div');
+            row.className = "flex justify-between items-center mb-2 last:mb-0";
+            const lbl = document.createElement('span'); 
+            lbl.className = "text-gray-500 font-medium mr-2"; lbl.innerText = label;
+            const input = document.createElement('input'); 
+            input.type = 'checkbox';
+            input.checked = checked;
+            input.onchange = (e) => onChange(e.target.checked);
+            row.appendChild(lbl); row.appendChild(input);
+            return row;
+        };
+
+        // 3. Helper: Select/Input Control
         const createControl = (label, category, type = 'text', options = []) => {
             const row = document.createElement('div'); row.className = "flex justify-between items-center mb-2 last:mb-0";
             const lbl = document.createElement('span'); lbl.className = "text-gray-500 font-medium mr-2 w-16 truncate"; lbl.innerText = label;
@@ -333,6 +357,8 @@
             }
             row.appendChild(lbl); row.appendChild(input); return row;
         };
+
+        // 4. Helper: Quad Input
         const createQuad = (label, categories) => {
             const row = document.createElement('div'); row.className = "flex flex-col mb-2 last:mb-0";
             const header = document.createElement('div'); header.className = "flex justify-between mb-1";
@@ -348,6 +374,7 @@
             row.appendChild(grid); return row;
         };
 
+        // --- BUILD MENU ---
         const items = []; const tag = selectedElement.tagName;
         const title = document.createElement('div'); title.innerText = `<${tag.toLowerCase()}>`; 
         title.className = "px-3 py-2 bg-gray-800 text-white font-mono font-bold text-center uppercase tracking-widest text-[10px] rounded-t-md"; items.push(title);
@@ -371,9 +398,24 @@
         layoutControls.push(createControl('Width', 'width')); layoutControls.push(createControl('Height', 'height'));
         layoutControls.push(createControl('Pad (All)', 'padding')); layoutControls.push(createQuad('Padding Sides', ['pt', 'pr', 'pb', 'pl']));
         layoutControls.push(createControl('Marg (All)', 'margin')); layoutControls.push(createQuad('Margin Sides', ['mt', 'mr', 'mb', 'ml']));
+        
         if (tag === 'DIV') {
-            const div = document.createElement('div'); div.className = "mt-3 mb-1 text-[9px] text-gray-400 font-bold uppercase border-t border-gray-100 pt-2"; div.innerText = "Flexbox"; layoutControls.push(div);
-            layoutControls.push(createControl('Direction', 'flexDir', 'select', OPTIONS.flexDir)); layoutControls.push(createControl('Justify', 'justify', 'select', OPTIONS.justify)); layoutControls.push(createControl('Align', 'items', 'select', OPTIONS.items));
+            const div = document.createElement('div'); 
+            div.className = "mt-3 mb-2 text-[9px] text-gray-400 font-bold uppercase border-t border-gray-100 pt-2"; div.innerText = "Flexbox"; 
+            layoutControls.push(div);
+            
+            // FLEX CHECKBOX
+            const isFlex = selectedElement.classList.contains('flex');
+            layoutControls.push(createCheckbox('Enable Flex Mode', isFlex, (checked) => {
+                HistoryManager.pushState();
+                if(checked) selectedElement.classList.add('flex');
+                else selectedElement.classList.remove('flex');
+                OverlayManager.update();
+            }));
+
+            layoutControls.push(createControl('Direction', 'flexDir', 'select', OPTIONS.flexDir));
+            layoutControls.push(createControl('Justify', 'justify', 'select', OPTIONS.justify));
+            layoutControls.push(createControl('Align', 'items', 'select', OPTIONS.items));
         }
         items.push(createFlyout("Dimensions & Layout", layoutControls));
 
@@ -396,7 +438,6 @@
         menu.style.top = `${e.clientY}px`; menu.style.left = `${e.clientX}px`;
         items.forEach(item => menu.appendChild(item)); document.body.appendChild(menu);
     });
-
     // --- KEY RESET LISTENER (LAG FIX) ---
     document.addEventListener('keyup', (e) => {
         if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') isReordering = false;
