@@ -2,298 +2,399 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Figma-in-a-tag: Persistence Fixed</title>
+    <title>Figma-in-a-tag: Final Polish</title>
+    <style id="editor-ui-styles">
+        /* Base Handle Style */
+        .proto-handle {
+            position: absolute; width: 12px; height: 12px; z-index: 2147483647; 
+            pointer-events: auto; box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+            border-radius: 2px; transition: transform 0.1s;
+        }
+        .proto-handle:hover { transform: scale(1.4); z-index: 2147483648; }
+
+        /* Resize Handles (Blue/White) */
+        .handle-resize { background: white; border: 1px solid #3b82f6; }
+        .handle-resize:hover { background: #3b82f6; }
+
+        /* Padding Handles (Green) */
+        .handle-pad { background: #4ade80; border: 1px solid #16a34a; border-radius: 50%; }
+        .handle-pad:hover { background: #16a34a; }
+
+        /* Margin Handles (Orange) */
+        .handle-marg { background: #fb923c; border: 1px solid #ea580c; }
+        .handle-marg:hover { background: #ea580c; }
+
+        .proto-overlay {
+            position: fixed; pointer-events: none; z-index: 2147483646;
+            border: 2px solid #3b82f6; transition: none;
+        }
+        
+        /* Menu Inputs */
+        .proto-input {
+            background: #f9fafb; border: 1px solid #d1d5db; border-radius: 3px;
+            padding: 2px 4px; font-size: 10px; width: 100%; font-family: monospace;
+            text-align: center;
+        }
+        .proto-input:focus { outline: none; border-color: #3b82f6; background: white; }
+    </style>
 </head>
-<body class="p-10">
+<body class="p-20 bg-gray-50">
     <div class="mb-10">
-        <h1 class="text-4xl font-bold">The Scanner (Fixed)</h1>
-        <p class="text-lg text-gray-600">Save this project, open it again, and I will still be clickable.</p>
+        <h1 class="text-4xl font-bold text-gray-800">Compact UI</h1>
+        <p class="text-lg text-gray-600">Right-click the element. The inputs are now in a 2x2 grid.</p>
+    </div>
+
+    <div class="w-[300px] h-[200px] bg-white border border-gray-300 shadow-md">
+        <div class="w-full h-full bg-blue-50 flex items-center justify-center text-blue-300">Content</div>
     </div>
 
     <script>
         (function() {
             const TAILWIND_CDN = 'https://cdn.tailwindcss.com';
             
+            // --- CONSTANTS ---
             const OPTIONS = {
-                textSize: ['text-xs', 'text-sm', 'text-base', 'text-lg', 'text-xl', 'text-2xl', 'text-3xl', 'text-4xl', 'text-5xl', 'text-6xl', 'text-7xl', 'text-8xl', 'text-9xl'],
+                textSize: ['text-xs', 'text-sm', 'text-base', 'text-lg', 'text-xl', 'text-2xl', 'text-3xl', 'text-4xl'],
                 fontFamily: ['font-sans', 'font-serif', 'font-mono'],
-                fontWeight: ['font-thin', 'font-extralight', 'font-light', 'font-normal', 'font-medium', 'font-semibold', 'font-bold', 'font-extrabold', 'font-black'],
-                rounded: ['rounded-none', 'rounded-sm', 'rounded', 'rounded-md', 'rounded-lg', 'rounded-xl', 'rounded-2xl', 'rounded-3xl', 'rounded-full'],
+                fontWeight: ['font-thin', 'font-normal', 'font-bold', 'font-black'],
+                rounded: ['rounded-none', 'rounded-sm', 'rounded', 'rounded-md', 'rounded-lg', 'rounded-full'],
                 borderWidth: ['border-0', 'border', 'border-2', 'border-4', 'border-8'],
                 textAlign: ['text-left', 'text-center', 'text-right', 'text-justify'],
-                flexDir: ['flex-row', 'flex-col', 'flex-row-reverse', 'flex-col-reverse'],
-                justify: ['justify-start', 'justify-end', 'justify-center', 'justify-between', 'justify-around', 'justify-evenly'],
-                items: ['items-start', 'items-end', 'items-center', 'items-baseline', 'items-stretch']
+                flexDir: ['flex-row', 'flex-col'],
+                justify: ['justify-start', 'justify-end', 'justify-center', 'justify-between'],
+                items: ['items-start', 'items-end', 'items-center']
             };
 
             let selectedElement = null;
             let mouseX = 0, mouseY = 0;
 
-            // --- CORE FIX: RUNTIME BINDING CHECK ---
-            function makeEditable(el) {
-                // We check a property on the object, NOT the HTML attribute
-                if (el._figma_bound) return; 
-                el._figma_bound = true; 
-
-                // We still set dataset for visual debugging, but don't rely on it for logic
-                el.dataset.editable = "true";
-
-                if (el.tagName === 'DIV' && el.innerHTML.trim() === '') {
-                    el.classList.add('min-w-[50px]', 'min-h-[50px]', 'border', 'border-dashed', 'border-gray-300');
-                }
-                
-                el.addEventListener('click', (ev) => {
-                    ev.stopPropagation();
-                    const menu = document.getElementById('proto-menu');
-                    if (menu) menu.remove();
-                    
-                    if (selectedElement) selectedElement.classList.remove('outline', 'outline-2', 'outline-blue-500', 'outline-offset-2');
-                    
-                    selectedElement = el;
-                    selectedElement.classList.add('outline', 'outline-2', 'outline-blue-500', 'outline-offset-2');
-                });
-            }
-
-            function initializeEnvironment() {
-                let hasTailwind = false;
-                document.querySelectorAll('script').forEach(s => {
-                    if (s.src && s.src.includes('tailwindcss')) hasTailwind = true;
-                });
-
-                if (!hasTailwind) {
-                    nukeStyles();
-                    injectTailwind();
-                }
-                
-                // Always run scan, regardless of Nuke status
-                scanAndHydrate();
-            }
-
-            function nukeStyles() {
-                document.querySelectorAll('link[rel="stylesheet"], style').forEach(el => el.disabled = true);
-                const allElements = document.body.getElementsByTagName("*");
-                for (let el of allElements) el.removeAttribute("style");
-                document.body.removeAttribute("style");
-            }
-
-            function injectTailwind() {
-                const script = document.createElement('script');
-                script.src = TAILWIND_CDN;
-                script.onload = () => {
-                    document.body.classList.add('jit-wake-up');
-                    setTimeout(() => document.body.classList.remove('jit-wake-up'), 0);
-                };
-                document.head.appendChild(script);
-            }
-
-            function scanAndHydrate() {
-                const all = document.body.getElementsByTagName('*');
-                for (let el of all) {
-                    // Filter out UI elements
-                    if (el.tagName === 'SCRIPT' || (el.id && el.id.startsWith('proto-'))) continue;
-                    makeEditable(el);
-                }
-            }
-
-            // Run Startup
-            initializeEnvironment();
-
-            document.addEventListener('mousemove', (e) => { mouseX = e.clientX; mouseY = e.clientY; });
-
+            // --- TAILWIND MANAGER (Strict Cleanup Mode) ---
             const TwManager = {
                 patterns: {
-                    width: /w-\S+/, height: /h-\S+/, 
-                    minWidth: /min-w-\S+/, minHeight: /min-h-\S+/,
-                    maxWidth: /max-w-\S+/, maxHeight: /max-h-\S+/, 
-                    padding: /p[axylrbt]?-\S+/, margin: /m[axylrbt]?-\S+/,
-                    bgColor: /bg-\S+/, 
-                    textColor: /text-(?!xs|sm|base|lg|xl|\dxl|left|center|right|justify)\S+/, 
-                    textSize: /text-(xs|sm|base|lg|xl|\d+xl)/,
-                    fontFamily: /font-(sans|serif|mono)/,
-                    fontWeight: /font-(thin|extralight|light|normal|medium|semibold|bold|extrabold|black)/,
-                    rounded: /rounded-\S*/, 
-                    borderWidth: /border-(0|2|4|8)|border(?!\-)/,
-                    flexDir: /flex-(row|col)\S*/,
-                    justify: /justify-\S+/, items: /items-\S+/, 
-                    textAlign: /text-(left|center|right|justify)/
-                },
-                getValue: (el, category) => {
-                    const match = el.className.match(TwManager.patterns[category]);
-                    if (category === 'borderWidth' && !match && el.classList.contains('border')) return 'border';
-                    return match ? match[0] : '';
+                    width: /^w-/, height: /^h-/, 
+                    minWidth: /^min-w-/, minHeight: /^min-h-/,
+                    maxWidth: /^max-w-/, maxHeight: /^max-h-/, 
+                    pt: /^pt-/, pr: /^pr-/, pb: /^pb-/, pl: /^pl-/,
+                    mt: /^mt-/, mr: /^mr-/, mb: /^mb-/, ml: /^ml-/,
+                    padding: /^p-/, margin: /^m-/,
+                    bgColor: /^bg-/, textColor: /^text-(?!xs|sm|base|lg|xl|\d+xl|left|center|right|justify)/, 
+                    textSize: /^text-(xs|sm|base|lg|xl|\d+xl)/, fontFamily: /^font-(sans|serif|mono)/,
+                    fontWeight: /^font-(thin|extralight|light|normal|medium|semibold|bold|extrabold|black)/,
+                    rounded: /^rounded-/, borderWidth: /^border(-[0248])?$|^border$/,
+                    flexDir: /^flex-(row|col)/, justify: /^justify-/, items: /^items-/, textAlign: /^text-(left|center|right|justify)/
                 },
                 update: (el, category, newValue) => {
-                    const oldMatch = el.className.match(TwManager.patterns[category]);
-                    if (oldMatch) el.classList.remove(oldMatch[0]);
-                    else if (category === 'borderWidth' && el.classList.contains('border')) el.classList.remove('border');
+                    const pattern = TwManager.patterns[category];
+                    // Strict Cleanup: Remove ALL matching classes first to prevent explosion
+                    const toRemove = [];
+                    el.classList.forEach(cls => { if (pattern.test(cls)) toRemove.push(cls); });
+                    toRemove.forEach(c => el.classList.remove(c));
+                    
                     if (newValue && newValue.trim() !== '') el.classList.add(newValue.trim());
+                },
+                getValue: (el, category) => {
+                    const pattern = TwManager.patterns[category];
+                    let match = '';
+                    el.classList.forEach(cls => { if (pattern.test(cls)) match = cls; });
+                    if (category === 'borderWidth' && match === '' && el.classList.contains('border')) return 'border';
+                    return match;
                 }
             };
 
-            function createMenu(x, y, content) {
-                const existing = document.getElementById('proto-menu');
-                if (existing) existing.remove();
-                const menu = document.createElement('div');
-                menu.id = 'proto-menu';
-                menu.className = `fixed z-[2147483647] bg-white border border-gray-200 shadow-2xl rounded-lg flex flex-col min-w-[240px] p-3 font-mono text-xs max-h-[80vh] overflow-y-auto`;
-                menu.style.top = `${y}px`;
-                menu.style.left = `${x}px`;
-                content.forEach(item => menu.appendChild(item));
-                document.body.appendChild(menu);
-            }
+            // --- OVERLAY MANAGER ---
+            const OverlayManager = {
+                overlay: null,
+                
+                update: () => {
+                    if (!selectedElement) {
+                        if (OverlayManager.overlay) OverlayManager.overlay.remove();
+                        OverlayManager.overlay = null;
+                        return;
+                    }
+                    if (!OverlayManager.overlay) {
+                        OverlayManager.overlay = document.createElement('div');
+                        OverlayManager.overlay.className = 'proto-overlay';
+                        
+                        const handles = [
+                            { type: 'resize-r',  cls: 'handle-resize', cursor: 'ew-resize',   pos: 'top: 50%; right: -6px; transform: translateY(-50%);' },
+                            { type: 'resize-b',  cls: 'handle-resize', cursor: 'ns-resize',   pos: 'bottom: -6px; left: 50%; transform: translateX(-50%);' },
+                            { type: 'resize-br', cls: 'handle-resize', cursor: 'nwse-resize', pos: 'bottom: -6px; right: -6px;' },
+                            // Padding (Green)
+                            { type: 'pt', cls: 'handle-pad', cursor: 'ns-resize', title: 'Padding Top', side: 'pt' },
+                            { type: 'pr', cls: 'handle-pad', cursor: 'ew-resize', title: 'Padding Right', side: 'pr' },
+                            { type: 'pb', cls: 'handle-pad', cursor: 'ns-resize', title: 'Padding Bottom', side: 'pb' },
+                            { type: 'pl', cls: 'handle-pad', cursor: 'ew-resize', title: 'Padding Left', side: 'pl' },
+                            // Margin (Orange)
+                            { type: 'mt', cls: 'handle-marg', cursor: 'ns-resize', title: 'Margin Top', side: 'mt' },
+                            { type: 'mr', cls: 'handle-marg', cursor: 'ew-resize', title: 'Margin Right', side: 'mr' },
+                            { type: 'mb', cls: 'handle-marg', cursor: 'ns-resize', title: 'Margin Bottom', side: 'mb' },
+                            { type: 'ml', cls: 'handle-marg', cursor: 'ew-resize', title: 'Margin Left', side: 'ml' }
+                        ];
 
+                        handles.forEach(h => {
+                            const handle = document.createElement('div');
+                            handle.className = `proto-handle ${h.cls}`;
+                            handle.style.cssText += h.pos;
+                            handle.style.cursor = h.cursor;
+                            if(h.title) handle.title = h.title;
+                            handle.dataset.type = h.type;
+                            handle.addEventListener('mousedown', (e) => {
+                                e.stopPropagation(); e.preventDefault();
+                                OverlayManager.startDrag(e, h.type, handle);
+                            });
+                            OverlayManager.overlay.appendChild(handle);
+                        });
+                        document.body.appendChild(OverlayManager.overlay);
+                    }
+                    
+                    const rect = selectedElement.getBoundingClientRect();
+                    Object.assign(OverlayManager.overlay.style, {
+                        top: `${rect.top}px`, left: `${rect.left}px`,
+                        width: `${rect.width}px`, height: `${rect.height}px`
+                    });
+
+                    // Sync Handles
+                    const style = window.getComputedStyle(selectedElement);
+                    const p = { t: parseFloat(style.paddingTop)||0, r: parseFloat(style.paddingRight)||0, b: parseFloat(style.paddingBottom)||0, l: parseFloat(style.paddingLeft)||0 };
+                    const m = { t: parseFloat(style.marginTop)||0, r: parseFloat(style.marginRight)||0, b: parseFloat(style.marginBottom)||0, l: parseFloat(style.marginLeft)||0 };
+
+                    const setPos = (type, css) => { const h = OverlayManager.overlay.querySelector(`[data-type="${type}"]`); if(h) Object.assign(h.style, css); };
+
+                    setPos('resize-r',  { top: '50%', right: '-6px', transform: 'translateY(-50%)' });
+                    setPos('resize-b',  { bottom: '-6px', left: '50%', transform: 'translateX(-50%)' });
+                    setPos('resize-br', { bottom: '-6px', right: '-6px' });
+
+                    setPos('pt', { top: `${Math.max(10, p.t)}px`, left: '50%', transform: 'translateX(-50%)' });
+                    setPos('pb', { bottom: `${Math.max(10, p.b)}px`, left: '50%', transform: 'translateX(-50%)' });
+                    setPos('pl', { left: `${Math.max(10, p.l)}px`, top: '50%', transform: 'translateY(-50%)' });
+                    setPos('pr', { right: `${Math.max(10, p.r)}px`, top: '50%', transform: 'translateY(-50%)' });
+
+                    setPos('mt', { top: `-${Math.max(15, m.t)}px`, left: '50%', transform: 'translateX(-50%)' });
+                    setPos('mb', { bottom: `-${Math.max(15, m.b)}px`, left: '50%', transform: 'translateX(-50%)' });
+                    setPos('ml', { left: `-${Math.max(15, m.l)}px`, top: '50%', transform: 'translateY(-50%)' });
+                    setPos('mr', { right: `-${Math.max(15, m.r)}px`, top: '50%', transform: 'translateY(-50%)' });
+                },
+
+                startDrag: (e, type, handleElement) => {
+                    const startX = e.clientX;
+                    const startY = e.clientY;
+                    const rect = selectedElement.getBoundingClientRect();
+                    const style = window.getComputedStyle(selectedElement);
+                    const elStyle = selectedElement.style;
+                    const overlayStyle = OverlayManager.overlay.style;
+
+                    const startOverlayTop = rect.top;
+                    const startOverlayLeft = rect.left;
+                    const initial = {
+                        w: rect.width, h: rect.height,
+                        pt: parseFloat(style.paddingTop)||0, pr: parseFloat(style.paddingRight)||0, pb: parseFloat(style.paddingBottom)||0, pl: parseFloat(style.paddingLeft)||0,
+                        mt: parseFloat(style.marginTop)||0, mr: parseFloat(style.marginRight)||0, mb: parseFloat(style.marginBottom)||0, ml: parseFloat(style.marginLeft)||0
+                    };
+
+                    const onMove = (ev) => {
+                        const dx = ev.clientX - startX;
+                        const dy = ev.clientY - startY;
+
+                        if (type.startsWith('resize')) {
+                            let newW = initial.w, newH = initial.h;
+                            if (type.includes('r')) newW = Math.max(10, initial.w + dx);
+                            if (type.includes('b')) newH = Math.max(10, initial.h + dy);
+                            elStyle.width = `${newW}px`; elStyle.height = `${newH}px`;
+                            overlayStyle.width = `${newW}px`; overlayStyle.height = `${newH}px`;
+                        }
+                        
+                        // Padding
+                        if (type === 'pt') { const val=Math.max(0,initial.pt+dy); elStyle.paddingTop=`${val}px`; handleElement.style.top=`${Math.max(10,val)}px`; }
+                        if (type === 'pb') { const val=Math.max(0,initial.pb-dy); elStyle.paddingBottom=`${val}px`; handleElement.style.bottom=`${Math.max(10,val)}px`; }
+                        if (type === 'pl') { const val=Math.max(0,initial.pl+dx); elStyle.paddingLeft=`${val}px`; handleElement.style.left=`${Math.max(10,val)}px`; }
+                        if (type === 'pr') { const val=Math.max(0,initial.pr-dx); elStyle.paddingRight=`${val}px`; handleElement.style.right=`${Math.max(10,val)}px`; }
+
+                        // Margin
+                        if (type === 'mt') { const val=initial.mt-dy; elStyle.marginTop=`${val}px`; overlayStyle.top=`${startOverlayTop-dy}px`; handleElement.style.top=`-${Math.max(15,val)}px`; }
+                        if (type === 'mb') { const val=initial.mb+dy; elStyle.marginBottom=`${val}px`; handleElement.style.bottom=`-${Math.max(15,val)}px`; }
+                        if (type === 'ml') { const val=initial.ml-dx; elStyle.marginLeft=`${val}px`; overlayStyle.left=`${startOverlayLeft-dx}px`; handleElement.style.left=`-${Math.max(15,val)}px`; }
+                        if (type === 'mr') { const val=initial.mr+dx; elStyle.marginRight=`${val}px`; handleElement.style.right=`-${Math.max(15,val)}px`; }
+                    };
+
+                    const onUp = () => {
+                        window.removeEventListener('mousemove', onMove);
+                        window.removeEventListener('mouseup', onUp);
+
+                        const s = selectedElement.style;
+                        const mappings = [
+                            { prop: 'width', tw: 'width', pfx: 'w' }, { prop: 'height', tw: 'height', pfx: 'h' },
+                            { prop: 'paddingTop', tw: 'pt', pfx: 'pt' }, { prop: 'paddingRight', tw: 'pr', pfx: 'pr' }, { prop: 'paddingBottom', tw: 'pb', pfx: 'pb' }, { prop: 'paddingLeft', tw: 'pl', pfx: 'pl' },
+                            { prop: 'marginTop', tw: 'mt', pfx: 'mt' }, { prop: 'marginRight', tw: 'mr', pfx: 'mr' }, { prop: 'marginBottom', tw: 'mb', pfx: 'mb' }, { prop: 'marginLeft', tw: 'ml', pfx: 'ml' }
+                        ];
+
+                        mappings.forEach(m => {
+                            const val = s[m.prop];
+                            if (val) { TwManager.update(selectedElement, m.tw, `${m.pfx}-[${val}]`); s[m.prop] = ''; }
+                        });
+
+                        document.body.classList.add('jit-refresh');
+                        setTimeout(() => { document.body.classList.remove('jit-refresh'); OverlayManager.update(); }, 50);
+                    };
+                    window.addEventListener('mousemove', onMove); window.addEventListener('mouseup', onUp);
+                }
+            };
+
+            // --- INIT BOILERPLATE ---
+            function makeEditable(el) {
+                if (el._figma_bound) return; el._figma_bound = true; el.dataset.editable = "true";
+                if (el.tagName === 'DIV' && el.innerHTML.trim() === '') el.classList.add('min-w-[50px]', 'min-h-[50px]', 'border', 'border-dashed', 'border-gray-300');
+                el.addEventListener('click', (ev) => {
+                    ev.stopPropagation(); const menu = document.getElementById('proto-menu'); if (menu) menu.remove();
+                    selectedElement = el; OverlayManager.update();
+                });
+            }
+            window.addEventListener('scroll', () => { if(selectedElement) OverlayManager.update(); }, true);
+            window.addEventListener('resize', () => { if(selectedElement) OverlayManager.update(); });
+            function initializeEnvironment() {
+                let hasTailwind = false;
+                document.querySelectorAll('script').forEach(s => { if (s.src && s.src.includes('tailwindcss')) hasTailwind = true; });
+                if (!hasTailwind) { nukeStyles(); injectTailwind(); }
+                scanAndHydrate();
+            }
+            function nukeStyles() {
+                document.querySelectorAll('link[rel="stylesheet"], style:not(#editor-ui-styles)').forEach(el => el.disabled = true);
+                const all = document.body.getElementsByTagName("*"); for (let el of all) el.removeAttribute("style");
+                document.body.removeAttribute("style");
+            }
+            function injectTailwind() {
+                const script = document.createElement('script'); script.src = TAILWIND_CDN;
+                script.onload = () => { document.body.classList.add('jit-wake-up'); setTimeout(() => document.body.classList.remove('jit-wake-up'), 0); };
+                document.head.appendChild(script);
+            }
+            function scanAndHydrate() {
+                const all = document.body.getElementsByTagName('*');
+                for (let el of all) {
+                    if (el.tagName === 'SCRIPT' || (el.id && el.id.startsWith('proto-')) || el.classList.contains('proto-handle') || el.classList.contains('proto-overlay')) continue;
+                    makeEditable(el);
+                }
+            }
+            initializeEnvironment();
+            document.addEventListener('mousemove', (e) => { mouseX = e.clientX; mouseY = e.clientY; });
+
+            // --- MENU & SAVE ---
+            function createMenu(x, y, content) {
+                const existing = document.getElementById('proto-menu'); if (existing) existing.remove();
+                const menu = document.createElement('div'); menu.id = 'proto-menu';
+                // WIDER MENU for 2x2 GRID: min-w-[260px]
+                menu.className = `fixed z-[2147483647] bg-white border border-gray-200 shadow-2xl rounded-lg flex flex-col min-w-[260px] p-3 font-mono text-xs max-h-[80vh] overflow-y-auto`;
+                menu.style.top = `${y}px`; menu.style.left = `${x}px`;
+                content.forEach(item => menu.appendChild(item)); document.body.appendChild(menu);
+            }
             function createSaveButton() {
-                const btn = document.createElement('button');
-                btn.innerText = "💾 Save Project";
-                btn.id = "proto-save-btn";
+                const btn = document.createElement('button'); btn.innerText = "💾 Save Project"; btn.id = "proto-save-btn";
                 btn.className = "fixed bottom-5 right-5 z-[2147483647] bg-blue-600 text-white font-bold py-2 px-4 rounded shadow-lg hover:bg-blue-700";
                 btn.onclick = () => {
-                    const menu = document.getElementById('proto-menu'); if (menu) menu.remove();
-                    btn.remove();
-                    if (selectedElement) selectedElement.classList.remove('outline', 'outline-2', 'outline-blue-500', 'outline-offset-2');
-                    
-                    // We remove the runtime binding flag before saving? 
-                    // No need, properties starting with _ aren't saved in HTML anyway.
-                    
-                    const a = document.createElement('a');
-                    a.href = URL.createObjectURL(new Blob([document.documentElement.outerHTML], {type: "text/html"}));
-                    a.download = "index.html";
-                    document.body.appendChild(a); a.click(); document.body.removeChild(a);
-                    
-                    if (selectedElement) selectedElement.classList.add('outline', 'outline-2', 'outline-blue-500', 'outline-offset-2');
-                    document.body.appendChild(btn);
+                    const menu = document.getElementById('proto-menu'); if (menu) menu.remove(); btn.remove();
+                    selectedElement = null; OverlayManager.update();
+                    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([document.documentElement.outerHTML], {type: "text/html"}));
+                    a.download = "index.html"; document.body.appendChild(a); a.click(); document.body.removeChild(a); document.body.appendChild(btn);
                 };
                 document.body.appendChild(btn);
             }
             createSaveButton();
 
+            // --- CONTEXT MENU (Compact 2x2 Grid) ---
             document.addEventListener('contextmenu', (e) => {
-                if (!selectedElement) return;
-                e.preventDefault();
+                if (!selectedElement) return; e.preventDefault();
 
                 const createControl = (label, category, type = 'text', options = []) => {
-                    const row = document.createElement('div');
-                    row.className = "flex justify-between items-center mb-2";
-                    const lbl = document.createElement('span');
-                    lbl.className = "text-gray-500 font-bold mr-3 w-20 truncate";
-                    lbl.innerText = label;
-
+                    const row = document.createElement('div'); row.className = "flex justify-between items-center mb-2";
+                    const lbl = document.createElement('span'); lbl.className = "text-gray-500 font-bold mr-3 w-20 truncate"; lbl.innerText = label;
                     let input;
                     if (type === 'select') {
-                        input = document.createElement('select');
-                        input.className = "bg-gray-50 border border-gray-300 rounded px-2 py-1 flex-1 focus:outline-none focus:border-blue-500 w-full";
-                        const def = document.createElement('option');
-                        def.value = ""; def.innerText = "-"; input.appendChild(def);
-                        options.forEach(opt => {
-                            const o = document.createElement('option');
-                            o.value = opt; o.innerText = opt; input.appendChild(o);
-                        });
+                        input = document.createElement('select'); input.className = "proto-input";
+                        const def = document.createElement('option'); def.value = ""; def.innerText = "-"; input.appendChild(def);
+                        options.forEach(opt => { const o = document.createElement('option'); o.value = opt; o.innerText = opt; input.appendChild(o); });
                         input.value = TwManager.getValue(selectedElement, category);
-                        input.onchange = () => TwManager.update(selectedElement, category, input.value);
+                        input.onchange = () => { TwManager.update(selectedElement, category, input.value); OverlayManager.update(); };
                     } else {
-                        input = document.createElement('input');
-                        input.type = 'text';
-                        input.className = "bg-gray-50 border border-gray-300 rounded px-2 py-1 flex-1 focus:outline-none focus:border-blue-500 w-full";
+                        input = document.createElement('input'); input.type = 'text'; input.className = "proto-input";
                         input.value = TwManager.getValue(selectedElement, category);
-                        input.onchange = () => TwManager.update(selectedElement, category, input.value);
+                        input.onchange = () => { TwManager.update(selectedElement, category, input.value); OverlayManager.update(); };
                     }
                     row.appendChild(lbl); row.appendChild(input); return row;
                 };
 
-                const items = [];
-                const tag = selectedElement.tagName;
-                const title = document.createElement('div');
-                title.innerText = `<${tag.toLowerCase()}> Settings`;
-                title.className = "mb-3 pb-2 border-b border-gray-100 font-bold text-gray-800 uppercase tracking-wider";
-                items.push(title);
+                // COMPACT QUAD INPUT (2x2 Grid)
+                const createQuad = (label, categories) => {
+                    const row = document.createElement('div'); row.className = "flex flex-col mb-2";
+                    
+                    const header = document.createElement('div'); header.className = "flex justify-between mb-1";
+                    const lbl = document.createElement('span'); lbl.className = "text-gray-500 font-bold"; lbl.innerText = label;
+                    header.appendChild(lbl);
+                    row.appendChild(header);
+
+                    // 2x2 Grid
+                    const grid = document.createElement('div'); 
+                    grid.className = "grid grid-cols-2 gap-1"; // CSS Grid for 2 on top, 2 on bottom
+                    
+                    const placeholders = ['Top', 'Right', 'Bottom', 'Left'];
+                    categories.forEach((cat, i) => {
+                        const input = document.createElement('input'); input.type = 'text'; input.className = "proto-input text-center";
+                        input.placeholder = placeholders[i];
+                        input.value = TwManager.getValue(selectedElement, cat);
+                        input.onchange = () => { TwManager.update(selectedElement, cat, input.value); OverlayManager.update(); };
+                        grid.appendChild(input);
+                    });
+                    row.appendChild(grid);
+                    return row;
+                };
+
+                const items = []; const tag = selectedElement.tagName;
+                const title = document.createElement('div'); title.innerText = `<${tag.toLowerCase()}> Settings`; title.className = "mb-3 pb-2 border-b border-gray-100 font-bold text-gray-800 uppercase tracking-wider"; items.push(title);
 
                 if (['DIV', 'IMG', 'H1', 'P', 'SPAN', 'BUTTON'].includes(tag)) {
-                    items.push(createControl('Width', 'width'));
+                    items.push(createControl('Width', 'width')); 
                     items.push(createControl('Height', 'height'));
-                    items.push(createControl('Padding', 'padding'));
-                    items.push(createControl('Margin', 'margin'));
+                    
+                    items.push(createControl('Pad (All)', 'padding'));
+                    items.push(createQuad('Padding (T R B L)', ['pt', 'pr', 'pb', 'pl']));
+                    
+                    items.push(createControl('Marg (All)', 'margin'));
+                    items.push(createQuad('Margin (T R B L)', ['mt', 'mr', 'mb', 'ml']));
                 }
 
                 if (tag === 'DIV') {
                     items.push(createControl('Bg Color', 'bgColor'));
                     items.push(createControl('Radius', 'rounded', 'select', OPTIONS.rounded));
                     items.push(createControl('Border', 'borderWidth', 'select', OPTIONS.borderWidth));
-                    
-                    const flexLabel = document.createElement('div');
-                    flexLabel.innerText = "Layout";
-                    flexLabel.className = "mt-2 mb-1 text-gray-400 font-bold text-[10px] uppercase";
-                    items.push(flexLabel);
-                    
                     items.push(createControl('Direction', 'flexDir', 'select', OPTIONS.flexDir));
                     items.push(createControl('Justify', 'justify', 'select', OPTIONS.justify));
                     items.push(createControl('Align', 'items', 'select', OPTIONS.items));
                 }
-
+                
                 if (['H1', 'P', 'SPAN', 'BUTTON', 'A'].includes(tag)) {
                     items.push(createControl('Font', 'fontFamily', 'select', OPTIONS.fontFamily));
                     items.push(createControl('Weight', 'fontWeight', 'select', OPTIONS.fontWeight));
                     items.push(createControl('Size', 'textSize', 'select', OPTIONS.textSize));
                     items.push(createControl('Align', 'textAlign', 'select', OPTIONS.textAlign));
                     items.push(createControl('Color', 'textColor'));
-                    
-                    const txtInp = document.createElement('textarea');
-                    txtInp.className = "bg-gray-50 border border-gray-300 rounded px-2 py-1 w-full text-xs h-16 mt-2 font-sans";
-                    txtInp.value = selectedElement.innerText;
-                    txtInp.oninput = () => selectedElement.innerText = txtInp.value;
-                    items.push(txtInp);
+                    const txtInp = document.createElement('textarea'); txtInp.className = "bg-gray-50 border border-gray-300 rounded px-2 py-1 w-full text-xs h-16 mt-2 font-sans"; txtInp.value = selectedElement.innerText; txtInp.oninput = () => selectedElement.innerText = txtInp.value; items.push(txtInp);
                 }
 
-                if (tag === 'IMG') {
-                     const srcRow = document.createElement('div');
-                     srcRow.className = "mb-2";
-                     const srcLbl = document.createElement('div');
-                     srcLbl.className = "text-gray-500 font-bold mb-1"; srcLbl.innerText = "Source URL";
-                     const srcInp = document.createElement('input');
-                     srcInp.className = "bg-gray-50 border border-gray-300 rounded px-2 py-1 w-full";
-                     srcInp.value = selectedElement.src;
-                     srcInp.onchange = () => selectedElement.src = srcInp.value;
-                     srcRow.appendChild(srcLbl); srcRow.appendChild(srcInp);
-                     items.push(srcRow);
-                }
-
-                const delBtn = document.createElement('button');
-                delBtn.innerText = "Delete Element";
-                delBtn.className = "mt-4 w-full bg-red-50 text-red-600 border border-red-200 rounded py-2 hover:bg-red-100";
-                delBtn.onclick = () => { if(confirm("Delete?")) { selectedElement.remove(); selectedElement = null; document.getElementById('proto-menu').remove(); }};
+                const delBtn = document.createElement('button'); delBtn.innerText = "Delete Element"; delBtn.className = "mt-4 w-full bg-red-50 text-red-600 border border-red-200 rounded py-2 hover:bg-red-100";
+                delBtn.onclick = () => { if(confirm("Delete?")) { selectedElement.remove(); selectedElement = null; OverlayManager.update(); document.getElementById('proto-menu').remove(); }};
                 items.push(delBtn);
-
                 createMenu(e.clientX, e.clientY, items);
             });
 
             document.addEventListener('keydown', (e) => {
                 if (e.shiftKey && e.key.toLowerCase() === 'a') {
                     const items = ['div', 'text', 'img'].map(opt => {
-                        const btn = document.createElement('button');
-                        btn.innerText = opt.toUpperCase();
+                        const btn = document.createElement('button'); btn.innerText = opt.toUpperCase();
                         btn.className = "w-full text-left px-3 py-2 hover:bg-blue-50 hover:text-blue-600 rounded text-gray-700 font-bold transition-colors";
-                        btn.onclick = () => {
-                            let newEl;
-                            if (opt === 'div') { newEl = document.createElement('div'); newEl.className = "min-w-[150px] min-h-[150px] bg-gray-100 border-2 border-dashed border-gray-300 p-4 m-2 flex flex-col"; }
-                            else if (opt === 'text') { newEl = document.createElement('h1'); newEl.innerText = "New Heading"; newEl.className = "text-4xl font-bold text-gray-800 m-2"; }
-                            else if (opt === 'img') { newEl = document.createElement('img'); newEl.src = "https://via.placeholder.com/150"; newEl.className = "w-[150px] h-auto m-2"; }
-                            makeEditable(newEl);
-                            (selectedElement || document.body).appendChild(newEl);
-                            document.getElementById('proto-menu').remove();
-                            newEl.click();
-                        };
+                        btn.onclick = () => { let newEl; if (opt === 'div') { newEl = document.createElement('div'); newEl.className = "min-w-[150px] min-h-[150px] bg-gray-100 border-2 border-dashed border-gray-300 p-4 m-2 flex flex-col"; } else if (opt === 'text') { newEl = document.createElement('h1'); newEl.innerText = "New Heading"; newEl.className = "text-4xl font-bold text-gray-800 m-2"; } else if (opt === 'img') { newEl = document.createElement('img'); newEl.src = "https://via.placeholder.com/150"; newEl.className = "w-[150px] h-auto m-2"; } makeEditable(newEl); (selectedElement || document.body).appendChild(newEl); document.getElementById('proto-menu').remove(); selectedElement = newEl; OverlayManager.update(); };
                         return btn;
                     });
                     createMenu(mouseX, mouseY, items);
                 }
-                if (e.key === 'Escape') {
-                    const menu = document.getElementById('proto-menu'); if(menu) menu.remove();
-                    if(selectedElement) { selectedElement.classList.remove('outline', 'outline-2', 'outline-blue-500', 'outline-offset-2'); selectedElement = null; }
-                }
-                if (selectedElement && e.shiftKey) {
-                    const p = selectedElement.parentNode;
-                    if (e.key === 'ArrowLeft') { const prev = selectedElement.previousElementSibling; if(prev) p.insertBefore(selectedElement, prev); }
-                    else if (e.key === 'ArrowRight') { const next = selectedElement.nextElementSibling; if(next) p.insertBefore(selectedElement, next.nextElementSibling); }
-                }
+                if (e.key === 'Escape') { const menu = document.getElementById('proto-menu'); if(menu) menu.remove(); selectedElement = null; OverlayManager.update(); }
+                if (selectedElement && e.shiftKey) { const p = selectedElement.parentNode; if (e.key === 'ArrowLeft') { const prev = selectedElement.previousElementSibling; if(prev) p.insertBefore(selectedElement, prev); } else if (e.key === 'ArrowRight') { const next = selectedElement.nextElementSibling; if(next) p.insertBefore(selectedElement, next.nextElementSibling); } OverlayManager.update(); }
             });
         })();
     </script>
