@@ -384,29 +384,71 @@
             }
             createSaveButton();
 
-            // --- CONTEXT & CREATE MENU (Standard) ---
+            // --- CONTEXT MENU (Smart Flyouts) ---
             document.addEventListener('contextmenu', (e) => {
-                if (!selectedElement) return; e.preventDefault();
+                if (!selectedElement) return;
+                e.preventDefault();
+
+                // 1. DIRECTION LOGIC: Calculate available space
+                const MENU_WIDTH = 140;   // Approximate width of the main hub
+                const FLYOUT_WIDTH = 240; // Defined width of the side panel
+                const WINDOW_W = window.innerWidth;
+                
+                // If opening to the right causes overflow, flip to left
+                const openLeft = (e.clientX + MENU_WIDTH + FLYOUT_WIDTH) > WINDOW_W;
+                
+                // CSS Classes based on decision
+                // Open Right: left-full (100% left) + ml-1 (tiny gap)
+                // Open Left: right-full (100% right) + mr-1
+                const flyoutPosClass = openLeft 
+                    ? "right-full mr-1" 
+                    : "left-full ml-1";
+
+                // 2. Helper: Create Flyout Row
+                const createFlyout = (label, children) => {
+                    const row = document.createElement('div');
+                    row.className = "group relative px-3 py-2 hover:bg-blue-50 cursor-default flex justify-between items-center text-gray-700 font-bold text-[11px] border-b border-gray-50 last:border-0";
+                    // Arrow changes direction based on side
+                    const arrow = openLeft ? "◀" : "▶";
+                    row.innerHTML = `<span>${label}</span><span class="text-gray-400 text-[8px]">${arrow}</span>`;
+
+                    const flyout = document.createElement('div');
+                    // Dynamic class injection here
+                    flyout.className = `hidden group-hover:block absolute top-0 w-[240px] bg-white border border-gray-200 shadow-xl rounded-lg p-2 z-[50] ${flyoutPosClass}`;
+                    
+                    children.forEach(c => flyout.appendChild(c));
+                    row.appendChild(flyout);
+                    
+                    return row;
+                };
+
+                // 3. Helper: Controls (Unchanged)
                 const createControl = (label, category, type = 'text', options = []) => {
-                    const row = document.createElement('div'); row.className = "flex justify-between items-center mb-2";
-                    const lbl = document.createElement('span'); lbl.className = "text-gray-500 font-bold mr-3 w-20 truncate"; lbl.innerText = label;
+                    const row = document.createElement('div'); 
+                    row.className = "flex justify-between items-center mb-2 last:mb-0";
+                    const lbl = document.createElement('span'); 
+                    lbl.className = "text-gray-500 font-medium mr-2 w-16 truncate"; lbl.innerText = label;
                     let input;
                     const changeHandler = (val) => { HistoryManager.pushState(); TwManager.update(selectedElement, category, val); OverlayManager.update(); };
+
                     if (type === 'select') {
-                        input = document.createElement('select'); input.className = "proto-input";
+                        input = document.createElement('select'); input.className = "proto-input flex-1";
                         const def = document.createElement('option'); def.value = ""; def.innerText = "-"; input.appendChild(def);
                         options.forEach(opt => { const o = document.createElement('option'); o.value = opt; o.innerText = opt; input.appendChild(o); });
-                        input.value = TwManager.getValue(selectedElement, category); input.onchange = () => changeHandler(input.value);
+                        input.value = TwManager.getValue(selectedElement, category);
+                        input.onchange = () => changeHandler(input.value);
                     } else {
-                        input = document.createElement('input'); input.type = 'text'; input.className = "proto-input";
-                        input.value = TwManager.getValue(selectedElement, category); input.onchange = () => changeHandler(input.value);
+                        input = document.createElement('input'); input.type = 'text'; input.className = "proto-input flex-1";
+                        input.value = TwManager.getValue(selectedElement, category);
+                        input.onchange = () => changeHandler(input.value);
                     }
                     row.appendChild(lbl); row.appendChild(input); return row;
                 };
+
                 const createQuad = (label, categories) => {
-                    const row = document.createElement('div'); row.className = "flex flex-col mb-2";
+                    const row = document.createElement('div'); row.className = "flex flex-col mb-2 last:mb-0";
                     const header = document.createElement('div'); header.className = "flex justify-between mb-1";
-                    const lbl = document.createElement('span'); lbl.className = "text-gray-500 font-bold"; lbl.innerText = label; header.appendChild(lbl); row.appendChild(header);
+                    const lbl = document.createElement('span'); lbl.className = "text-gray-500 font-medium"; lbl.innerText = label; header.appendChild(lbl); row.appendChild(header);
                     const grid = document.createElement('div'); grid.className = "grid grid-cols-2 gap-1"; 
                     const placeholders = ['Top', 'Right', 'Bottom', 'Left'];
                     categories.forEach((cat, i) => {
@@ -417,25 +459,85 @@
                     });
                     row.appendChild(grid); return row;
                 };
-                const items = []; const tag = selectedElement.tagName;
-                const title = document.createElement('div'); title.innerText = `<${tag.toLowerCase()}> Settings`; title.className = "mb-3 pb-2 border-b border-gray-100 font-bold text-gray-800 uppercase tracking-wider"; items.push(title);
-                if (['DIV', 'IMG', 'H1', 'P', 'SPAN', 'BUTTON'].includes(tag)) {
-                    items.push(createControl('Width', 'width')); items.push(createControl('Height', 'height'));
-                    items.push(createControl('Pad (All)', 'padding')); items.push(createQuad('Padding (T R B L)', ['pt', 'pr', 'pb', 'pl']));
-                    items.push(createControl('Marg (All)', 'margin')); items.push(createQuad('Margin (T R B L)', ['mt', 'mr', 'mb', 'ml']));
-                }
-                if (tag === 'DIV') {
-                    items.push(createControl('Bg Color', 'bgColor')); items.push(createControl('Radius', 'rounded', 'select', OPTIONS.rounded)); items.push(createControl('Border', 'borderWidth', 'select', OPTIONS.borderWidth)); items.push(createControl('Direction', 'flexDir', 'select', OPTIONS.flexDir)); items.push(createControl('Justify', 'justify', 'select', OPTIONS.justify)); items.push(createControl('Align', 'items', 'select', OPTIONS.items));
-                }
+
+                // --- BUILD MENU ---
+                const tag = selectedElement.tagName;
+                const items = [];
+
+                const title = document.createElement('div'); 
+                title.innerText = `<${tag.toLowerCase()}>`; 
+                title.className = "px-3 py-2 bg-gray-800 text-white font-mono font-bold text-center uppercase tracking-widest text-[10px] rounded-t-md"; 
+                items.push(title);
+
+                // Text Flyout
                 if (['H1', 'P', 'SPAN', 'BUTTON', 'A'].includes(tag)) {
-                    items.push(createControl('Font', 'fontFamily', 'select', OPTIONS.fontFamily)); items.push(createControl('Weight', 'fontWeight', 'select', OPTIONS.fontWeight)); items.push(createControl('Size', 'textSize', 'select', OPTIONS.textSize)); items.push(createControl('Align', 'textAlign', 'select', OPTIONS.textAlign)); items.push(createControl('Color', 'textColor'));
-                    const txtInp = document.createElement('textarea'); txtInp.className = "bg-gray-50 border border-gray-300 rounded px-2 py-1 w-full text-xs h-16 mt-2 font-sans"; txtInp.value = selectedElement.innerText;
-                    txtInp.onchange = () => { HistoryManager.pushState(); selectedElement.innerText = txtInp.value; }; items.push(txtInp);
+                    const controls = [];
+                    const txtArea = document.createElement('textarea');
+                    txtArea.className = "w-full border border-gray-300 rounded p-1 text-xs mb-2 font-sans h-16 focus:outline-none focus:border-blue-500";
+                    txtArea.value = selectedElement.innerText;
+                    txtArea.onchange = () => { HistoryManager.pushState(); selectedElement.innerText = txtArea.value; };
+                    controls.push(txtArea);
+                    controls.push(createControl('Font', 'fontFamily', 'select', OPTIONS.fontFamily));
+                    controls.push(createControl('Weight', 'fontWeight', 'select', OPTIONS.fontWeight));
+                    controls.push(createControl('Size', 'textSize', 'select', OPTIONS.textSize));
+                    controls.push(createControl('Color', 'textColor'));
+                    controls.push(createControl('Align', 'textAlign', 'select', OPTIONS.textAlign));
+                    items.push(createFlyout("Text & Content", controls));
                 }
-                const delBtn = document.createElement('button'); delBtn.innerText = "Delete Element"; delBtn.className = "mt-4 w-full bg-red-50 text-red-600 border border-red-200 rounded py-2 hover:bg-red-100";
-                delBtn.onclick = () => { if(confirm("Delete?")) { HistoryManager.pushState(); selectedElement.remove(); selectedElement = null; OverlayManager.update(); BreadcrumbManager.update(); document.getElementById('proto-menu').remove(); }};
+
+                // Layout Flyout
+                const layoutControls = [];
+                layoutControls.push(createControl('Width', 'width'));
+                layoutControls.push(createControl('Height', 'height'));
+                layoutControls.push(createControl('Pad (All)', 'padding'));
+                layoutControls.push(createQuad('Padding Sides', ['pt', 'pr', 'pb', 'pl']));
+                layoutControls.push(createControl('Marg (All)', 'margin'));
+                layoutControls.push(createQuad('Margin Sides', ['mt', 'mr', 'mb', 'ml']));
+                if (tag === 'DIV') {
+                    const div = document.createElement('div');
+                    div.className = "mt-3 mb-1 text-[9px] text-gray-400 font-bold uppercase border-t border-gray-100 pt-2";
+                    div.innerText = "Flexbox";
+                    layoutControls.push(div);
+                    layoutControls.push(createControl('Direction', 'flexDir', 'select', OPTIONS.flexDir));
+                    layoutControls.push(createControl('Justify', 'justify', 'select', OPTIONS.justify));
+                    layoutControls.push(createControl('Align', 'items', 'select', OPTIONS.items));
+                }
+                items.push(createFlyout("Dimensions & Layout", layoutControls));
+
+                // Appearance Flyout
+                const appearanceControls = [];
+                appearanceControls.push(createControl('Bg Color', 'bgColor'));
+                appearanceControls.push(createControl('Border', 'borderWidth', 'select', OPTIONS.borderWidth));
+                appearanceControls.push(createControl('Radius', 'rounded', 'select', OPTIONS.rounded));
+                if (tag === 'IMG') {
+                    const srcRow = document.createElement('div'); srcRow.className = "mb-2";
+                    const srcLbl = document.createElement('div'); srcLbl.className = "text-gray-500 font-medium mb-1"; srcLbl.innerText = "Source URL";
+                    const srcInp = document.createElement('input'); srcInp.className = "proto-input text-left";
+                    srcInp.value = selectedElement.src;
+                    srcInp.onchange = () => { HistoryManager.pushState(); selectedElement.src = srcInp.value; };
+                    srcRow.appendChild(srcLbl); srcRow.appendChild(srcInp);
+                    appearanceControls.push(srcRow);
+                }
+                items.push(createFlyout("Appearance", appearanceControls));
+
+                // Delete
+                const delBtn = document.createElement('button'); 
+                delBtn.innerText = "Delete Element"; 
+                delBtn.className = "w-full text-left px-3 py-2 text-red-600 font-bold hover:bg-red-50 border-t border-gray-100 rounded-b-md text-[11px]";
+                delBtn.onclick = () => { 
+                    if(confirm("Delete?")) { 
+                        HistoryManager.pushState(); 
+                        selectedElement.remove(); selectedElement = null; 
+                        OverlayManager.update(); BreadcrumbManager.update(); 
+                        document.getElementById('proto-menu').remove(); 
+                    }
+                };
                 items.push(delBtn);
+
                 createMenu(e.clientX, e.clientY, items);
+                // Adjust hub width
+                const menuEl = document.getElementById('proto-menu');
+                menuEl.className = `fixed z-[2147483647] bg-white border border-gray-200 shadow-2xl rounded-lg flex flex-col min-w-[140px] font-mono text-xs p-0`;
             });
 
             // --- SHORTCUTS ---
