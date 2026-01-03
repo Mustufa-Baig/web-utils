@@ -2,66 +2,61 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Figma-in-a-tag: Tailwind Edition</title>
+    <title>Figma-in-a-tag: Tailwind Native</title>
 </head>
 <body class="p-10">
-    <div style="background-color: red; width: 500px; height: 500px; color: white;">
-        I am legacy code. Nuke me.
+    <div style="background-color: #ffcccc; border: 5px solid red; padding: 50px; font-family: serif;">
+        <h1 style="color: darkred; font-size: 40px;">Legacy Content</h1>
+        <p>This formatting will be nuked and replaced with Tailwind defaults.</p>
     </div>
 
     <script>
         (function() {
-            // --- CONSTANTS ---
+            // --- CONSTANTS & CONFIG ---
             const TAILWIND_CDN = 'https://cdn.tailwindcss.com';
             
             // --- PHASE 1: THE NUKE & INSTALL ---
             function initializeEnvironment() {
                 console.log("⚙️ Initializing Environment...");
                 
-                // 1. Check for Tailwind
                 let hasTailwind = false;
                 document.querySelectorAll('script').forEach(s => {
-                    if (s.src.includes('tailwindcss')) hasTailwind = true;
+                    if (s.src && s.src.includes('tailwindcss')) hasTailwind = true;
                 });
 
                 if (!hasTailwind) {
-                    console.log("☢️ No Tailwind detected. Initiating Nuke Protocol...");
                     nukeStyles();
                     injectTailwind();
-                } else {
-                    console.log("✅ Tailwind detected. Extending environment.");
                 }
             }
 
             function nukeStyles() {
-                // Disable all existing stylesheets
-                document.querySelectorAll('link[rel="stylesheet"], style').forEach(el => {
-                    el.disabled = true;
-                    // We don't remove them to avoid breaking script references, just disable visual impact
-                });
-
-                // Strip inline styles from ALL body elements
+                document.querySelectorAll('link[rel="stylesheet"], style').forEach(el => el.disabled = true);
                 const allElements = document.body.getElementsByTagName("*");
                 for (let el of allElements) {
                     el.removeAttribute("style");
                 }
-                // Strip body style too
                 document.body.removeAttribute("style");
             }
 
             function injectTailwind() {
                 const script = document.createElement('script');
                 script.src = TAILWIND_CDN;
-                script.onload = () => console.log("🎨 Tailwind Installed & Ready.");
+                
+                // THE WAKE UP CALL
+                script.onload = () => {
+                    console.log("🎨 Tailwind Loaded. Waking up JIT Engine...");
+                    // We toggle a class on the body to force Tailwind's MutationObserver to trigger a scan immediately
+                    document.body.classList.add('jit-wake-up');
+                    setTimeout(() => document.body.classList.remove('jit-wake-up'), 0);
+                };
+                
                 document.head.appendChild(script);
             }
 
-            // Run Initialization
             initializeEnvironment();
 
-
-            // --- PHASE 2: THE EDITOR UI (Tailwind Native) ---
-            
+            // --- PHASE 2: THE EDITOR UI ---
             let mouseX = 0, mouseY = 0;
             let selectedElement = null;
 
@@ -70,21 +65,47 @@
                 mouseY = e.clientY;
             });
 
-            // --- MENU CREATION LOGIC ---
+            // --- TAILWIND CLASS MANAGER ---
+            const TwManager = {
+                patterns: {
+                    width: /w-\S+/,
+                    height: /h-\S+/,
+                    minWidth: /min-w-\S+/,
+                    minHeight: /min-h-\S+/,
+                    maxWidth: /max-w-\S+/,
+                    maxHeight: /max-h-\S+/,
+                    padding: /p[axylrbt]?-\S+/, 
+                    margin: /m[axylrbt]?-\S+/,
+                    bgColor: /bg-\S+/,
+                    textColor: /text-(?!xs|sm|base|lg|xl|\dxl)\S+/, 
+                    textSize: /text-(xs|sm|base|lg|xl|\dxl|\[\d+px\])/,
+                    font: /font-\S+/,
+                    rounded: /rounded-\S*/,
+                    border: /border-\S*/,
+                    flexDir: /flex-(row|col)\S*/,
+                    justify: /justify-\S+/,
+                    items: /items-\S+/,
+                    textAlign: /text-(left|center|right|justify)/
+                },
+                getValue: (el, category) => {
+                    const match = el.className.match(TwManager.patterns[category]);
+                    return match ? match[0] : '';
+                },
+                update: (el, category, newValue) => {
+                    const oldMatch = el.className.match(TwManager.patterns[category]);
+                    if (oldMatch) el.classList.remove(oldMatch[0]);
+                    if (newValue && newValue.trim() !== '') el.classList.add(newValue.trim());
+                }
+            };
+
+            // --- UI: MENU CREATION ---
             function createMenu(x, y, content) {
-                // Remove existing
                 const existing = document.getElementById('proto-menu');
                 if (existing) existing.remove();
 
                 const menu = document.createElement('div');
                 menu.id = 'proto-menu';
-                
-                // UI RULE 1: Fixed Position, Max Z-Index
-                // UI RULE 2: Tailwind Styling
-                menu.className = `fixed z-[2147483647] top-[${y}px] left-[${x}px] bg-white border border-gray-300 shadow-xl rounded-md flex flex-col min-w-[200px] p-2 font-sans text-sm`;
-                
-                // Manual fix for dynamic top/left since Tailwind JIT might not pick up variable strings immediately in a raw script injection context
-                // We use inline style ONLY for positioning the menu itself (allowed exception for UI overlays)
+                menu.className = `fixed z-[2147483647] bg-white border border-gray-200 shadow-2xl rounded-lg flex flex-col min-w-[220px] p-3 font-mono text-xs`;
                 menu.style.top = `${y}px`;
                 menu.style.left = `${x}px`;
 
@@ -92,38 +113,91 @@
                 document.body.appendChild(menu);
             }
 
+            // --- PERSISTENCE: SAVE BUTTON ---
+            function createSaveButton() {
+                const btn = document.createElement('button');
+                btn.innerText = "💾 Save Project";
+                btn.id = "proto-save-btn";
+                // Fixed bottom-right
+                btn.className = "fixed bottom-5 right-5 z-[2147483647] bg-blue-600 text-white font-bold py-2 px-4 rounded shadow-lg hover:bg-blue-700 transition-colors";
+                
+                btn.onclick = () => {
+                    // 1. Cleanup before saving
+                    // Remove the menu if open
+                    const menu = document.getElementById('proto-menu');
+                    if (menu) menu.remove();
+                    
+                    // Remove the save button itself from the DOM temporarily (so it doesn't get saved)
+                    btn.remove();
+
+                    // Remove selection outline
+                    if (selectedElement) {
+                        selectedElement.classList.remove('outline', 'outline-2', 'outline-blue-500', 'outline-offset-2');
+                    }
+
+                    // 2. Capture the HTML
+                    const docContent = document.documentElement.outerHTML;
+
+                    // 3. Create Blob & Download
+                    const blob = new Blob([docContent], {type: "text/html"});
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = "index.html";
+                    document.body.appendChild(a); // append to body to ensure click works in firefox
+                    a.click();
+                    
+                    // 4. Restore UI
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                    
+                    // Restore outline if needed (optional)
+                    if (selectedElement) {
+                        selectedElement.classList.add('outline', 'outline-2', 'outline-blue-500', 'outline-offset-2');
+                    }
+                    
+                    // Re-add the save button
+                    document.body.appendChild(btn);
+                };
+
+                document.body.appendChild(btn);
+            }
+            // Initialize the save button immediately
+            createSaveButton();
+
+
             // --- RIGHT CLICK: PROPERTY EDITOR ---
             document.addEventListener('contextmenu', (e) => {
                 if (!selectedElement) return;
                 e.preventDefault();
 
-                // Helper to create inputs
-                const createRow = (label, type, getter, setter, options = []) => {
+                const createInput = (label, category, isSelect = false, options = []) => {
                     const row = document.createElement('div');
-                    row.className = "flex justify-between items-center my-1";
+                    row.className = "flex justify-between items-center mb-2";
                     
                     const lbl = document.createElement('span');
-                    lbl.className = "text-gray-600 mr-2";
+                    lbl.className = "text-gray-500 font-bold mr-3 w-16";
                     lbl.innerText = label;
 
                     let input;
-                    if (type === 'select') {
+                    if (isSelect) {
                         input = document.createElement('select');
-                        input.className = "border border-gray-300 rounded px-1 py-0.5 w-24 text-xs";
+                        input.className = "bg-gray-50 border border-gray-300 rounded px-2 py-1 flex-1 focus:outline-none focus:border-blue-500";
                         options.forEach(opt => {
                             const o = document.createElement('option');
                             o.value = opt;
                             o.innerText = opt;
                             input.appendChild(o);
                         });
-                        input.value = getter(); 
-                        input.onchange = () => setter(input.value);
+                        input.value = TwManager.getValue(selectedElement, category);
+                        input.onchange = () => TwManager.update(selectedElement, category, input.value);
                     } else {
                         input = document.createElement('input');
                         input.type = 'text';
-                        input.className = "border border-gray-300 rounded px-1 py-0.5 w-20 text-xs";
-                        input.value = getter();
-                        input.oninput = () => setter(input.value);
+                        input.placeholder = "e.g. w-full";
+                        input.className = "bg-gray-50 border border-gray-300 rounded px-2 py-1 flex-1 focus:outline-none focus:border-blue-500";
+                        input.value = TwManager.getValue(selectedElement, category);
+                        input.onchange = () => TwManager.update(selectedElement, category, input.value);
                     }
 
                     row.appendChild(lbl);
@@ -133,79 +207,121 @@
 
                 const items = [];
                 const tag = selectedElement.tagName;
-                const cls = selectedElement.classList;
 
-                // Here we would implement the "Class Mapper" logic later.
-                // For now, we still edit styles directly or append utility classes blindly.
-                // To keep it strictly Tailwind, we should technically parse the classList.
-                // For this prototype step, we will use Arbitrary Values `w-[...]` to enforce Tailwind syntax.
+                const title = document.createElement('div');
+                title.innerText = `<${tag.toLowerCase()}> Settings`;
+                title.className = "mb-3 pb-2 border-b border-gray-100 font-bold text-gray-800 uppercase tracking-wider";
+                items.push(title);
 
-                // Example: Width Editor using Tailwind Arbitrary Values
-                items.push(createRow('Width', 'text', 
-                    () => selectedElement.style.width || '', // Simple fallback for now
-                    (val) => { 
-                        // Remove existing w- classes
-                        selectedElement.className = selectedElement.className.replace(/w-\[.*?\]/g, '').replace(/w-\S+/g, ''); 
-                        // Add new arbitrary class
-                        selectedElement.classList.add(`w-[${val}]`);
-                    }
-                ));
-                
-                // Example: Bg Color
-                if (tag === 'DIV') {
-                     items.push(createRow('Bg Color', 'text', 
-                        () => '', // Hard to read back from class without parser
-                        (val) => {
-                             selectedElement.classList.add(`bg-[${val}]`);
-                        }
-                    ));
+                if (tag === 'DIV' || tag === 'IMG') {
+                    items.push(createInput('Width', 'width'));
+                    items.push(createInput('Height', 'height'));
+                    items.push(createInput('Padding', 'padding'));
+                    items.push(createInput('Margin', 'margin'));
                 }
 
-                // Delete Button
+                if (tag === 'DIV') {
+                    items.push(createInput('Min W', 'minWidth'));
+                    items.push(createInput('Min H', 'minHeight'));
+                    items.push(createInput('Bg', 'bgColor'));
+                    items.push(createInput('Radius', 'rounded'));
+                    items.push(createInput('Border', 'border'));
+                    
+                    const flexLabel = document.createElement('div');
+                    flexLabel.innerText = "Layout (Flex)";
+                    flexLabel.className = "mt-2 mb-1 text-gray-400 font-bold text-[10px] uppercase";
+                    items.push(flexLabel);
+                    
+                    items.push(createInput('Dir', 'flexDir', true, ['flex-row', 'flex-col', 'flex-row-reverse', 'flex-col-reverse']));
+                    items.push(createInput('Justify', 'justify', true, ['justify-start', 'justify-end', 'justify-center', 'justify-between', 'justify-evenly']));
+                    items.push(createInput('Align', 'items', true, ['items-start', 'items-end', 'items-center', 'items-stretch']));
+                }
+
+                if (tag === 'H1') {
+                    items.push(createInput('Text Size', 'textSize'));
+                    items.push(createInput('Color', 'textColor'));
+                    items.push(createInput('Align', 'textAlign', true, ['text-left', 'text-center', 'text-right', 'text-justify']));
+                    items.push(createInput('Font', 'font'));
+                    items.push(createInput('Padding', 'padding'));
+                    items.push(createInput('Margin', 'margin'));
+                    
+                    const txtRow = document.createElement('div');
+                    txtRow.className = "flex flex-col mb-2";
+                    const txtLbl = document.createElement('span');
+                    txtLbl.className = "text-gray-500 font-bold mb-1";
+                    txtLbl.innerText = "Content";
+                    const txtInp = document.createElement('textarea');
+                    txtInp.className = "bg-gray-50 border border-gray-300 rounded px-2 py-1 w-full text-xs h-16";
+                    txtInp.value = selectedElement.innerText;
+                    txtInp.oninput = () => selectedElement.innerText = txtInp.value;
+                    txtRow.appendChild(txtLbl);
+                    txtRow.appendChild(txtInp);
+                    items.push(txtRow);
+                }
+
+                if (tag === 'IMG') {
+                     const srcRow = document.createElement('div');
+                     srcRow.className = "flex justify-between items-center mb-2";
+                     const srcLbl = document.createElement('span');
+                     srcLbl.className = "text-gray-500 font-bold mr-3 w-16";
+                     srcLbl.innerText = "Src";
+                     const srcInp = document.createElement('input');
+                     srcInp.className = "bg-gray-50 border border-gray-300 rounded px-2 py-1 flex-1";
+                     srcInp.value = selectedElement.src;
+                     srcInp.oninput = () => selectedElement.src = srcInp.value;
+                     srcRow.appendChild(srcLbl);
+                     srcRow.appendChild(srcInp);
+                     items.push(srcRow);
+                }
+
                 const delBtn = document.createElement('button');
-                delBtn.innerText = "Delete";
-                delBtn.className = "mt-2 bg-red-50 text-red-600 border border-red-200 rounded px-2 py-1 text-xs hover:bg-red-100";
+                delBtn.innerText = "Delete Element";
+                delBtn.className = "mt-4 w-full bg-red-50 text-red-600 border border-red-200 rounded py-2 hover:bg-red-100 transition-colors";
                 delBtn.onclick = () => {
-                    if(confirm("Delete?")) { selectedElement.remove(); document.getElementById('proto-menu').remove(); }
+                    if (confirm("Delete?")) {
+                        selectedElement.remove();
+                        selectedElement = null;
+                        document.getElementById('proto-menu').remove();
+                    }
                 };
                 items.push(delBtn);
 
                 createMenu(e.clientX, e.clientY, items);
             });
 
-            // --- SHIFT+A: CREATION MENU ---
+            // --- SHIFT+A: CREATE ---
             document.addEventListener('keydown', (e) => {
                 if (e.shiftKey && e.key.toLowerCase() === 'a') {
                     const items = ['div', 'text', 'img'].map(opt => {
                         const btn = document.createElement('button');
                         btn.innerText = opt.toUpperCase();
-                        btn.className = "w-full text-left px-2 py-1 hover:bg-gray-100 rounded text-gray-700 capitalize";
+                        btn.className = "w-full text-left px-3 py-2 hover:bg-blue-50 hover:text-blue-600 rounded text-gray-700 font-bold transition-colors";
                         btn.onclick = () => {
                             let newEl;
                             if (opt === 'div') {
                                 newEl = document.createElement('div');
-                                // RULE 2: Default Tailwind Classes
-                                newEl.className = "min-w-[100px] min-h-[100px] bg-gray-100 border border-dashed border-gray-400 m-2 flex flex-col p-2";
+                                newEl.className = "min-w-[150px] min-h-[150px] bg-gray-100 border-2 border-dashed border-gray-300 p-4 m-2 flex flex-col";
                             } else if (opt === 'text') {
                                 newEl = document.createElement('h1');
-                                newEl.innerText = "New Heading";
-                                newEl.className = "text-2xl font-bold text-gray-800 p-2 m-2";
+                                newEl.innerText = "Edit Me";
+                                newEl.className = "text-4xl font-bold text-gray-800 m-2";
                             } else if (opt === 'img') {
                                 newEl = document.createElement('img');
                                 newEl.src = "https://via.placeholder.com/150";
-                                newEl.className = "w-[150px] p-2 m-2";
+                                newEl.className = "w-[150px] h-auto object-cover m-2";
                             }
 
-                            // Selection Logic
                             newEl.addEventListener('click', (ev) => {
                                 ev.stopPropagation();
                                 const menu = document.getElementById('proto-menu');
                                 if (menu) menu.remove();
-
-                                if (selectedElement) selectedElement.classList.remove('outline', 'outline-2', 'outline-blue-500');
+                                
+                                if (selectedElement) {
+                                    selectedElement.classList.remove('outline', 'outline-2', 'outline-blue-500', 'outline-offset-2');
+                                }
                                 
                                 selectedElement = newEl;
-                                selectedElement.classList.add('outline', 'outline-2', 'outline-blue-500');
+                                selectedElement.classList.add('outline', 'outline-2', 'outline-blue-500', 'outline-offset-2');
                             });
 
                             const parent = selectedElement || document.body;
@@ -217,13 +333,23 @@
                     createMenu(mouseX, mouseY, items);
                 }
 
-                // Global Cancel
                 if (e.key === 'Escape') {
                     const menu = document.getElementById('proto-menu');
                     if (menu) menu.remove();
                     if (selectedElement) {
-                        selectedElement.classList.remove('outline', 'outline-2', 'outline-blue-500');
+                        selectedElement.classList.remove('outline', 'outline-2', 'outline-blue-500', 'outline-offset-2');
                         selectedElement = null;
+                    }
+                }
+
+                if (selectedElement && e.shiftKey) {
+                    const parent = selectedElement.parentNode;
+                    if (e.key === 'ArrowLeft') {
+                        const prev = selectedElement.previousElementSibling;
+                        if (prev) parent.insertBefore(selectedElement, prev);
+                    } else if (e.key === 'ArrowRight') {
+                        const next = selectedElement.nextElementSibling;
+                        if (next) parent.insertBefore(selectedElement, next.nextElementSibling);
                     }
                 }
             });
