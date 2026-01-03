@@ -2,258 +2,233 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Prototype</title>
+    <title>Figma-in-a-tag: Tailwind Edition</title>
 </head>
-<body>
+<body class="p-10">
+    <div style="background-color: red; width: 500px; height: 500px; color: white;">
+        I am legacy code. Nuke me.
+    </div>
+
     <script>
-        let mouseX = 0, mouseY = 0;
-        let selectedElement = null;
-        
-        document.addEventListener('mousemove', (e) => {
-            mouseX = e.clientX;
-            mouseY = e.clientY;
-        });
-
-        // Right-click Context Menu
-        document.addEventListener('contextmenu', (e) => {
-            if (!selectedElement) return; 
-            e.preventDefault(); 
+        (function() {
+            // --- CONSTANTS ---
+            const TAILWIND_CDN = 'https://cdn.tailwindcss.com';
             
-            const existing = document.getElementById('proto-menu');
-            if (existing) existing.remove();
+            // --- PHASE 1: THE NUKE & INSTALL ---
+            function initializeEnvironment() {
+                console.log("⚙️ Initializing Environment...");
+                
+                // 1. Check for Tailwind
+                let hasTailwind = false;
+                document.querySelectorAll('script').forEach(s => {
+                    if (s.src.includes('tailwindcss')) hasTailwind = true;
+                });
 
-            const menu = document.createElement('div');
-            menu.id = 'proto-menu';
-            Object.assign(menu.style, {
-                position: 'absolute',
-                left: `${e.clientX}px`,
-                top: `${e.clientY}px`,
-                backgroundColor: 'white',
-                border: '1px solid black',
-                padding: '5px',
-                zIndex: '1000',
-                display: 'flex',
-                flexDirection: 'column',
-                cursor: 'default',
-                minWidth: '200px',
-                boxShadow: '2px 2px 5px rgba(0,0,0,0.2)'
-            });
-
-            let props = [];
-            const tag = selectedElement.tagName;
-            const computedStyle = window.getComputedStyle(selectedElement);
-            
-            if (tag === 'DIV') {
-                props = [
-                    { label: 'Min Width', css: 'minWidth' },
-                    { label: 'Min Height', css: 'minHeight' },
-                    { label: 'Max Width', css: 'maxWidth' },
-                    { label: 'Max Height', css: 'maxHeight' },
-                    { label: 'Border', css: 'border'},
-                    { label: 'Radius', css: 'borderRadius'},
-                    { label: 'Bg Color', css: 'backgroundColor' },
-                    { label: 'Padding', css: 'padding' },
-                    { label: 'Margin', css: 'margin' },
-                    // Added Text Align
-                    { label: 'Text Align', css: 'textAlign', type: 'select', options: ['left', 'center', 'right', 'justify'] },
-                    { label: 'Direction', css: 'flexDirection', type: 'select', options: ['row', 'column', 'row-reverse', 'column-reverse'] },
-                    { label: 'Justify', css: 'justifyContent', type: 'select', options: ['flex-start', 'flex-end', 'center', 'space-between', 'space-around', 'space-evenly'] },
-                    { label: 'Align', css: 'alignItems', type: 'select', options: ['stretch', 'flex-start', 'flex-end', 'center', 'baseline'] }
-                ];
-            } else if (tag === 'H1') {
-                props = [
-                    { label: 'Text', prop: 'innerText' },
-                    { label: 'Color', css: 'color' }, 
-                    // Added Text Align
-                    { label: 'Align', css: 'textAlign', type: 'select', options: ['left', 'center', 'right', 'justify'] },    
-                    { label: 'Size', css: 'fontSize' },
-                    { label: 'Font', css: 'fontFamily' },
-                    { label: 'Padding', css: 'padding' },
-                    { label: 'Margin', css: 'margin' }
-                ];
-            } else if (tag === 'IMG') {
-                props = [
-                    { label: 'Img', attr: 'src' },
-                    { label: 'Width', css: 'width' },
-                    { label: 'Height', css: 'height' },
-                    { label: 'Padding', css: 'padding' },
-                    { label: 'Margin', css: 'margin' }
-                ];
+                if (!hasTailwind) {
+                    console.log("☢️ No Tailwind detected. Initiating Nuke Protocol...");
+                    nukeStyles();
+                    injectTailwind();
+                } else {
+                    console.log("✅ Tailwind detected. Extending environment.");
+                }
             }
 
-            props.forEach(p => {
-                const row = document.createElement('div');
-                Object.assign(row.style, { display: 'flex', justifyContent: 'space-between', margin: '4px 0', alignItems: 'center' });
+            function nukeStyles() {
+                // Disable all existing stylesheets
+                document.querySelectorAll('link[rel="stylesheet"], style').forEach(el => {
+                    el.disabled = true;
+                    // We don't remove them to avoid breaking script references, just disable visual impact
+                });
 
-                const lbl = document.createElement('span');
-                lbl.innerText = p.label;
-                lbl.style.fontSize = '12px';
-                lbl.style.marginRight = '10px';
-
-                let inputEl;
-
-                if (p.type === 'select') {
-                    inputEl = document.createElement('select');
-                    Object.assign(inputEl.style, { width: '100px', fontSize: '12px' });
-                    p.options.forEach(opt => {
-                        const option = document.createElement('option');
-                        option.value = opt;
-                        option.innerText = opt;
-                        inputEl.appendChild(option);
-                    });
-                } else {
-                    inputEl = document.createElement('input');
-                    inputEl.type = 'text';
-                    Object.assign(inputEl.style, { width: '80px', fontSize: '12px' });
+                // Strip inline styles from ALL body elements
+                const allElements = document.body.getElementsByTagName("*");
+                for (let el of allElements) {
+                    el.removeAttribute("style");
                 }
+                // Strip body style too
+                document.body.removeAttribute("style");
+            }
 
-                let currentVal;
-                if (p.attr === 'src') {
-                    currentVal = selectedElement.getAttribute('src') || '';
-                } else if (p.prop === 'innerText') {
-                    currentVal = selectedElement.innerText;
-                } else {
-                    currentVal = selectedElement.style[p.css] || computedStyle[p.css];
-                }
-                
-                inputEl.value = currentVal;
+            function injectTailwind() {
+                const script = document.createElement('script');
+                script.src = TAILWIND_CDN;
+                script.onload = () => console.log("🎨 Tailwind Installed & Ready.");
+                document.head.appendChild(script);
+            }
 
-                const updateFunc = () => {
-                   if (p.type !== 'select' && inputEl.value.trim() === '') return;
-                    
-                    if (p.attr === 'src') {
-                        selectedElement.src = inputEl.value;
-                    } else if (p.prop === 'innerText') {
-                        selectedElement.innerText = inputEl.value;
-                    } else {
-                        selectedElement.style[p.css] = inputEl.value;
-                    } 
-                };
+            // Run Initialization
+            initializeEnvironment();
 
-                inputEl.oninput = updateFunc;
-                inputEl.onchange = updateFunc;
 
-                row.appendChild(lbl);
-                row.appendChild(inputEl);
-                menu.appendChild(row);
+            // --- PHASE 2: THE EDITOR UI (Tailwind Native) ---
+            
+            let mouseX = 0, mouseY = 0;
+            let selectedElement = null;
+
+            document.addEventListener('mousemove', (e) => {
+                mouseX = e.clientX;
+                mouseY = e.clientY;
             });
 
-            // Delete Button
-            const delBtn = document.createElement('button');
-            delBtn.innerText = "Delete Element";
-            Object.assign(delBtn.style, {
-                marginTop: '10px',
-                backgroundColor: '#ffebee',
-                border: '1px solid #ffcdd2',
-                color: '#c62828',
-                padding: '5px',
-                cursor: 'pointer',
-                width: '100%'
-            });
-            delBtn.onclick = () => {
-                if (confirm("Are you sure you want to delete this element?")) {
-                    selectedElement.remove();
-                    selectedElement = null;
-                    menu.remove();
-                }
-            };
-            menu.appendChild(delBtn);
-
-            document.body.appendChild(menu);
-        });
-
-        document.addEventListener('keydown', (e) => {
-            // Shift + A: Create Menu
-            if (e.shiftKey && e.key.toLowerCase() === 'a') {
+            // --- MENU CREATION LOGIC ---
+            function createMenu(x, y, content) {
+                // Remove existing
                 const existing = document.getElementById('proto-menu');
                 if (existing) existing.remove();
 
                 const menu = document.createElement('div');
                 menu.id = 'proto-menu';
-                Object.assign(menu.style, {
-                    position: 'absolute',
-                    left: `${mouseX}px`,
-                    top: `${mouseY}px`,
-                    backgroundColor: 'white',
-                    border: '1px solid black',
-                    padding: '5px',
-                    zIndex: '1000',
-                    display: 'flex',
-                    flexDirection: 'column'
-                });
+                
+                // UI RULE 1: Fixed Position, Max Z-Index
+                // UI RULE 2: Tailwind Styling
+                menu.className = `fixed z-[2147483647] top-[${y}px] left-[${x}px] bg-white border border-gray-300 shadow-xl rounded-md flex flex-col min-w-[200px] p-2 font-sans text-sm`;
+                
+                // Manual fix for dynamic top/left since Tailwind JIT might not pick up variable strings immediately in a raw script injection context
+                // We use inline style ONLY for positioning the menu itself (allowed exception for UI overlays)
+                menu.style.top = `${y}px`;
+                menu.style.left = `${x}px`;
 
-                ['div', 'text', 'img'].forEach(opt => {
-                    const btn = document.createElement('button');
-                    btn.innerText = opt;
-                    btn.style.margin = '2px 0';
-                    btn.onclick = () => {
-                        let newEl;
-                        if (opt === 'div') {
-                            newEl = document.createElement('div');
-                            newEl.style.cssText = "min-width: 100px; min-height: 100px; background: #fff; border: 1px dashed #000; margin: 10px; display: flex; flex-direction: column; padding: 10px;"; 
-                        } else if (opt === 'text') {
-                            newEl = document.createElement('h1');
-                            newEl.innerText = "New Heading";
-                        } else if (opt === 'img') {
-                            newEl = document.createElement('img');
-                            newEl.src = "https://via.placeholder.com/150"; 
-                        }
-                        
-                        newEl.addEventListener('click', (e) => {
-                            e.stopPropagation();
-                            
-                            const existingMenu = document.getElementById('proto-menu');
-                            if (existingMenu) existingMenu.remove();
-
-                            if (selectedElement === newEl) return;
-
-                            if (selectedElement) {
-                                selectedElement.style.outline = '';
-                            }
-
-                            selectedElement = newEl;
-                            newEl.style.outline = '2px solid blue';
-                        });
-
-                        const parent = selectedElement || document.body;
-                        parent.appendChild(newEl);
-                        
-                        menu.remove();
-                    };
-                    menu.appendChild(btn);
-                });
-
+                content.forEach(item => menu.appendChild(item));
                 document.body.appendChild(menu);
             }
 
-            // Shift + Arrows: Reorder Elements
-            if (selectedElement && e.shiftKey) {
-                const parent = selectedElement.parentNode;
+            // --- RIGHT CLICK: PROPERTY EDITOR ---
+            document.addEventListener('contextmenu', (e) => {
+                if (!selectedElement) return;
+                e.preventDefault();
+
+                // Helper to create inputs
+                const createRow = (label, type, getter, setter, options = []) => {
+                    const row = document.createElement('div');
+                    row.className = "flex justify-between items-center my-1";
+                    
+                    const lbl = document.createElement('span');
+                    lbl.className = "text-gray-600 mr-2";
+                    lbl.innerText = label;
+
+                    let input;
+                    if (type === 'select') {
+                        input = document.createElement('select');
+                        input.className = "border border-gray-300 rounded px-1 py-0.5 w-24 text-xs";
+                        options.forEach(opt => {
+                            const o = document.createElement('option');
+                            o.value = opt;
+                            o.innerText = opt;
+                            input.appendChild(o);
+                        });
+                        input.value = getter(); 
+                        input.onchange = () => setter(input.value);
+                    } else {
+                        input = document.createElement('input');
+                        input.type = 'text';
+                        input.className = "border border-gray-300 rounded px-1 py-0.5 w-20 text-xs";
+                        input.value = getter();
+                        input.oninput = () => setter(input.value);
+                    }
+
+                    row.appendChild(lbl);
+                    row.appendChild(input);
+                    return row;
+                };
+
+                const items = [];
+                const tag = selectedElement.tagName;
+                const cls = selectedElement.classList;
+
+                // Here we would implement the "Class Mapper" logic later.
+                // For now, we still edit styles directly or append utility classes blindly.
+                // To keep it strictly Tailwind, we should technically parse the classList.
+                // For this prototype step, we will use Arbitrary Values `w-[...]` to enforce Tailwind syntax.
+
+                // Example: Width Editor using Tailwind Arbitrary Values
+                items.push(createRow('Width', 'text', 
+                    () => selectedElement.style.width || '', // Simple fallback for now
+                    (val) => { 
+                        // Remove existing w- classes
+                        selectedElement.className = selectedElement.className.replace(/w-\[.*?\]/g, '').replace(/w-\S+/g, ''); 
+                        // Add new arbitrary class
+                        selectedElement.classList.add(`w-[${val}]`);
+                    }
+                ));
                 
-                if (e.key === 'ArrowLeft') {
-                    const prev = selectedElement.previousElementSibling;
-                    if (prev) {
-                        parent.insertBefore(selectedElement, prev);
-                    }
-                } else if (e.key === 'ArrowRight') {
-                    const next = selectedElement.nextElementSibling;
-                    if (next) {
-                        parent.insertBefore(selectedElement, next.nextElementSibling);
+                // Example: Bg Color
+                if (tag === 'DIV') {
+                     items.push(createRow('Bg Color', 'text', 
+                        () => '', // Hard to read back from class without parser
+                        (val) => {
+                             selectedElement.classList.add(`bg-[${val}]`);
+                        }
+                    ));
+                }
+
+                // Delete Button
+                const delBtn = document.createElement('button');
+                delBtn.innerText = "Delete";
+                delBtn.className = "mt-2 bg-red-50 text-red-600 border border-red-200 rounded px-2 py-1 text-xs hover:bg-red-100";
+                delBtn.onclick = () => {
+                    if(confirm("Delete?")) { selectedElement.remove(); document.getElementById('proto-menu').remove(); }
+                };
+                items.push(delBtn);
+
+                createMenu(e.clientX, e.clientY, items);
+            });
+
+            // --- SHIFT+A: CREATION MENU ---
+            document.addEventListener('keydown', (e) => {
+                if (e.shiftKey && e.key.toLowerCase() === 'a') {
+                    const items = ['div', 'text', 'img'].map(opt => {
+                        const btn = document.createElement('button');
+                        btn.innerText = opt.toUpperCase();
+                        btn.className = "w-full text-left px-2 py-1 hover:bg-gray-100 rounded text-gray-700 capitalize";
+                        btn.onclick = () => {
+                            let newEl;
+                            if (opt === 'div') {
+                                newEl = document.createElement('div');
+                                // RULE 2: Default Tailwind Classes
+                                newEl.className = "min-w-[100px] min-h-[100px] bg-gray-100 border border-dashed border-gray-400 m-2 flex flex-col p-2";
+                            } else if (opt === 'text') {
+                                newEl = document.createElement('h1');
+                                newEl.innerText = "New Heading";
+                                newEl.className = "text-2xl font-bold text-gray-800 p-2 m-2";
+                            } else if (opt === 'img') {
+                                newEl = document.createElement('img');
+                                newEl.src = "https://via.placeholder.com/150";
+                                newEl.className = "w-[150px] p-2 m-2";
+                            }
+
+                            // Selection Logic
+                            newEl.addEventListener('click', (ev) => {
+                                ev.stopPropagation();
+                                const menu = document.getElementById('proto-menu');
+                                if (menu) menu.remove();
+
+                                if (selectedElement) selectedElement.classList.remove('outline', 'outline-2', 'outline-blue-500');
+                                
+                                selectedElement = newEl;
+                                selectedElement.classList.add('outline', 'outline-2', 'outline-blue-500');
+                            });
+
+                            const parent = selectedElement || document.body;
+                            parent.appendChild(newEl);
+                            document.getElementById('proto-menu').remove();
+                        };
+                        return btn;
+                    });
+                    createMenu(mouseX, mouseY, items);
+                }
+
+                // Global Cancel
+                if (e.key === 'Escape') {
+                    const menu = document.getElementById('proto-menu');
+                    if (menu) menu.remove();
+                    if (selectedElement) {
+                        selectedElement.classList.remove('outline', 'outline-2', 'outline-blue-500');
+                        selectedElement = null;
                     }
                 }
-            }
+            });
 
-            // Escape: Deselect / Close Menu
-            if (e.key === 'Escape') {
-                const menu = document.getElementById('proto-menu');
-                if (menu) menu.remove();
-
-                if (selectedElement) {
-                    selectedElement.style.outline = '';
-                    selectedElement = null;
-                }
-            }
-        });
+        })();
     </script>
 </body>
 </html>
