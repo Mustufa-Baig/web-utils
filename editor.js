@@ -74,7 +74,9 @@
         document.head.appendChild(style);
     }
 
+    // --- TAILWIND MANAGER (With Extras Support) ---
     const TwManager = {
+        // Known patterns
         patterns: {
             width: /^w-/, height: /^h-/, minWidth: /^min-w-/, minHeight: /^min-h-/, maxWidth: /^max-w-/, maxHeight: /^max-h-/, 
             pt: /^pt-/, pr: /^pr-/, pb: /^pb-/, pl: /^pl-/, mt: /^mt-/, mr: /^mr-/, mb: /^mb-/, ml: /^ml-/,
@@ -82,8 +84,12 @@
             textSize: /^text-(xs|sm|base|lg|xl|\d+xl)/, fontFamily: /^font-(sans|serif|mono)/,
             fontWeight: /^font-(thin|extralight|light|normal|medium|semibold|bold|extrabold|black)/,
             rounded: /^rounded-/, borderWidth: /^border(-[0248])?$|^border$/,
-            flexDir: /^flex-(row|col)/, justify: /^justify-/, items: /^items-/, textAlign: /^text-(left|center|right|justify)/
+            flexDir: /^flex-(row|col)/, justify: /^justify-/, items: /^items-/, textAlign: /^text-(left|center|right|justify)/,
+            // We also need to recognize the 'flex' class explicitly for the checkbox
+            flex: /^flex$/ 
         },
+
+        // Update a specific known category
         update: (el, category, newValue) => {
             const pattern = TwManager.patterns[category];
             const toRemove = [];
@@ -91,12 +97,40 @@
             toRemove.forEach(c => el.classList.remove(c));
             if (newValue && newValue.trim() !== '') el.classList.add(newValue.trim());
         },
+
+        // Get value for a known category
         getValue: (el, category) => {
             const pattern = TwManager.patterns[category];
             let match = '';
             el.classList.forEach(cls => { if (pattern.test(cls)) match = cls; });
+            // Special handling for border/flex boolean classes
             if (category === 'borderWidth' && match === '' && el.classList.contains('border')) return 'border';
             return match;
+        },
+
+        // --- NEW: EXTRAS LOGIC ---
+        
+        // 1. Get all classes that DO NOT match any known pattern
+        getUnknown: (el) => {
+            const known = Object.values(TwManager.patterns);
+            const unknown = [];
+            el.classList.forEach(cls => {
+                // If the class matches NONE of our regexes, it's an "Extra"
+                const isKnown = known.some(regex => regex.test(cls));
+                if (!isKnown) unknown.push(cls);
+            });
+            return unknown.join(' ');
+        },
+
+        // 2. Replace old unknown classes with new string
+        setUnknown: (el, newString) => {
+            // First, remove currently existing unknown classes to prevent duplicates/ghosts
+            const currentUnknowns = TwManager.getUnknown(el).split(/\s+/).filter(c => c);
+            currentUnknowns.forEach(c => el.classList.remove(c));
+
+            // Then add the new ones
+            const newClasses = newString.split(/\s+/).filter(c => c);
+            newClasses.forEach(c => el.classList.add(c));
         }
     };
 
@@ -301,10 +335,35 @@
         }
     }
 
+    function makeEditable(el) {
+        if (el._figma_bound) return; 
+        el._figma_bound = true; 
+        el.dataset.editable = "true";
+        
+        // Add visual hint for empty divs
+        if (el.tagName === 'DIV' && el.innerHTML.trim() === '') {
+            el.classList.add('min-w-[50px]', 'min-h-[50px]', 'border', 'border-dashed', 'border-gray-300');
+        }
+
+        el.addEventListener('click', (ev) => {
+            // LOCK: If the menu exists, DO NOT allow switching selection
+            if (document.getElementById('proto-menu')) {
+                // Optional: You could make the menu shake or flash here to indicate it's modal
+                return;
+            }
+
+            ev.stopPropagation(); 
+            selectedElement = el; 
+            OverlayManager.update(); 
+            BreadcrumbManager.update();
+        });
+    }
+
     // Start
     initializeEnvironment();
     document.addEventListener('mousemove', (e) => { mouseX = e.clientX; mouseY = e.clientY; });
 
+    
     // --- CONTEXT MENU (With Flex Toggle) ---
     document.addEventListener('contextmenu', (e) => {
         if (!selectedElement) return; 
@@ -374,6 +433,7 @@
             row.appendChild(grid); return row;
         };
 
+
         // --- BUILD MENU ---
         const items = []; const tag = selectedElement.tagName;
         const title = document.createElement('div'); title.innerText = `<${tag.toLowerCase()}>`; 
@@ -427,6 +487,34 @@
             srcInp.onchange = () => { HistoryManager.pushState(); selectedElement.src = srcInp.value; }; srcRow.appendChild(srcLbl); srcRow.appendChild(srcInp); appearanceControls.push(srcRow);
         }
         items.push(createFlyout("Appearance", appearanceControls));
+
+        
+        // ... (Keep existing sections: Text, Dimensions, Appearance) ...
+
+        // 4. EXTRAS FLYOUT (The "Escape Hatch")
+        const extrasControls = [];
+        const extraDesc = document.createElement('div');
+        extraDesc.className = "text-[9px] text-gray-400 mb-2 leading-tight";
+        extraDesc.innerText = "Custom classes unsupported by the UI (e.g. shadow-xl, opacity-50, hover:...)";
+        extrasControls.push(extraDesc);
+
+        const extraArea = document.createElement('textarea');
+        extraArea.className = "w-full border border-gray-300 rounded p-1 text-xs font-mono h-16 focus:outline-none focus:border-blue-500 bg-gray-50";
+        extraArea.placeholder = "e.g. shadow-lg opacity-50";
+        // Load unknown classes
+        extraArea.value = TwManager.getUnknown(selectedElement);
+        
+        // Save on change
+        extraArea.onchange = () => { 
+            HistoryManager.pushState(); 
+            TwManager.setUnknown(selectedElement, extraArea.value); 
+            OverlayManager.update(); 
+        };
+        extrasControls.push(extraArea);
+        
+        items.push(createFlyout("Extras & Custom", extrasControls));
+
+        // ... (Keep Delete Button & Menu Render logic) ...
 
         const delBtn = document.createElement('button'); delBtn.innerText = "Delete Element"; delBtn.className = "w-full text-left px-3 py-2 text-red-600 font-bold hover:bg-red-50 border-t border-gray-100 rounded-b-md text-[11px]";
         delBtn.onclick = () => { if(confirm("Delete?")) { HistoryManager.pushState(); selectedElement.remove(); selectedElement = null; OverlayManager.update(); BreadcrumbManager.update(); document.getElementById('proto-menu').remove(); }};
