@@ -66,6 +66,7 @@
     let selectedElement = null;
     let mouseX = 0, mouseY = 0;
     let isReordering = false;
+    let clipboardElement = null;
 
     // --- MANAGERS ---
 
@@ -462,10 +463,55 @@
 
     // --- SHORTCUTS & KEYBOARD NAV ---
     document.addEventListener('keydown', (e) => {
-        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) HistoryManager.redo(); else HistoryManager.undo(); }
-        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); HistoryManager.redo(); }
+        const activeTag = document.activeElement ? document.activeElement.tagName : '';
+        const isTyping = ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeTag);
+
+        // COPY (Ctrl+C)
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c' && selectedElement && !isTyping) {
+            e.preventDefault();
+            clipboardElement = selectedElement.cloneNode(true);
+            
+            // Visual feedback: Flash the element briefly so the user knows it copied
+            const oldOpacity = selectedElement.style.opacity;
+            selectedElement.style.opacity = '0.5';
+            setTimeout(() => selectedElement.style.opacity = oldOpacity || '', 150);
+        }
+
+        // PASTE (Ctrl+V)
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v' && clipboardElement && !isTyping) {
+            e.preventDefault();
+            HistoryManager.pushState();
+            
+            // 1. Create a fresh clone from the clipboard
+            const clone = clipboardElement.cloneNode(true);
+            
+            // 2. Insert it next to the currently selected element (or body if none)
+            if (selectedElement && selectedElement.parentNode) {
+                selectedElement.parentNode.insertBefore(clone, selectedElement.nextElementSibling);
+            } else {
+                document.body.appendChild(clone);
+            }
+
+            // 3. Hydrate the new element and its children (attach click listeners)
+            makeEditable(clone);
+            const allChildren = clone.getElementsByTagName('*');
+            for(let child of allChildren) {
+                makeEditable(child);
+            }
+
+            // 4. Automatically select the newly pasted item
+            const menu = document.getElementById('proto-menu'); if (menu) menu.remove();
+            selectedElement = clone;
+            OverlayManager.update(); 
+            BreadcrumbManager.update();
+        }
+
+        // UNDO / REDO
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !isTyping) { e.preventDefault(); if (e.shiftKey) HistoryManager.redo(); else HistoryManager.undo(); }
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y' && !isTyping) { e.preventDefault(); HistoryManager.redo(); }
         
-        if (e.shiftKey && e.key === 'S' && !e.ctrlKey && !e.metaKey) {
+        // SAVE SOURCE (Shift+S)
+        if (e.shiftKey && e.key === 'S' && !e.ctrlKey && !e.metaKey && !isTyping) {
             e.preventDefault();
             selectedElement = null; OverlayManager.update(); BreadcrumbManager.update(); const menu = document.getElementById('proto-menu'); if (menu) menu.remove();
             const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([document.documentElement.outerHTML], {type: "text/html"}));
