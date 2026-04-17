@@ -4,6 +4,7 @@
     
     // --- INTERNAL STYLES ---
     const EDITOR_CSS = `
+        /* Editor Elements */
         .proto-handle {
             position: absolute; width: 12px; height: 12px; z-index: 2147483647; 
             pointer-events: auto; box-shadow: 0 1px 3px rgba(0,0,0,0.3);
@@ -26,6 +27,13 @@
             text-align: center;
         }
         .proto-input:focus { outline: none; border-color: #3b82f6; background: white; }
+        
+        /* Menu & Accessibility */
+        /* Show flyout on Hover OR Focus (Keyboard support) */
+        .proto-row:hover .proto-flyout,
+        .proto-row:focus-within .proto-flyout { display: block; }
+        .proto-row:focus { outline: 2px solid #3b82f6; outline-offset: -2px; background-color: #eff6ff; }
+
         .proto-breadcrumbs {
             position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
             background: rgba(30, 41, 59, 0.9); backdrop-filter: blur(4px);
@@ -43,7 +51,6 @@
         .proto-sep { opacity: 0.4; }
     `;
 
-    // --- TAILWIND UTILITY OPTIONS ---
     const OPTIONS = {
         textSize: ['text-xs', 'text-sm', 'text-base', 'text-lg', 'text-xl', 'text-2xl', 'text-3xl', 'text-4xl', 'text-5xl', 'text-6xl'],
         fontFamily: ['font-sans', 'font-serif', 'font-mono'],
@@ -51,17 +58,13 @@
         rounded: ['rounded-none', 'rounded-sm', 'rounded', 'rounded-md', 'rounded-lg', 'rounded-xl', 'rounded-2xl', 'rounded-full'],
         borderWidth: ['border-0', 'border', 'border-2', 'border-4', 'border-8'],
         textAlign: ['text-left', 'text-center', 'text-right', 'text-justify'],
-        // Flex Options
         flexDir: ['flex-row', 'flex-col', 'flex-row-reverse', 'flex-col-reverse'],
-        // Added missing justify options
         justify: ['justify-start', 'justify-end', 'justify-center', 'justify-between', 'justify-around', 'justify-evenly'],
-        // Added missing align options
         items: ['items-start', 'items-end', 'items-center', 'items-baseline', 'items-stretch']
     };
+
     let selectedElement = null;
     let mouseX = 0, mouseY = 0;
-    
-    // PERFORMANCE FIX: Flag to track if we are currently holding down a key
     let isReordering = false;
 
     // --- MANAGERS ---
@@ -74,9 +77,7 @@
         document.head.appendChild(style);
     }
 
-    // --- TAILWIND MANAGER (With Extras Support) ---
     const TwManager = {
-        // Known patterns
         patterns: {
             width: /^w-/, height: /^h-/, minWidth: /^min-w-/, minHeight: /^min-h-/, maxWidth: /^max-w-/, maxHeight: /^max-h-/, 
             pt: /^pt-/, pr: /^pr-/, pb: /^pb-/, pl: /^pl-/, mt: /^mt-/, mr: /^mr-/, mb: /^mb-/, ml: /^ml-/,
@@ -85,11 +86,8 @@
             fontWeight: /^font-(thin|extralight|light|normal|medium|semibold|bold|extrabold|black)/,
             rounded: /^rounded-/, borderWidth: /^border(-[0248])?$|^border$/,
             flexDir: /^flex-(row|col)/, justify: /^justify-/, items: /^items-/, textAlign: /^text-(left|center|right|justify)/,
-            // We also need to recognize the 'flex' class explicitly for the checkbox
             flex: /^flex$/ 
         },
-
-        // Update a specific known category
         update: (el, category, newValue) => {
             const pattern = TwManager.patterns[category];
             const toRemove = [];
@@ -97,38 +95,26 @@
             toRemove.forEach(c => el.classList.remove(c));
             if (newValue && newValue.trim() !== '') el.classList.add(newValue.trim());
         },
-
-        // Get value for a known category
         getValue: (el, category) => {
             const pattern = TwManager.patterns[category];
             let match = '';
             el.classList.forEach(cls => { if (pattern.test(cls)) match = cls; });
-            // Special handling for border/flex boolean classes
             if (category === 'borderWidth' && match === '' && el.classList.contains('border')) return 'border';
             return match;
         },
-
-        // --- NEW: EXTRAS LOGIC ---
-        
-        // 1. Get all classes that DO NOT match any known pattern
+        // Extras Logic
         getUnknown: (el) => {
             const known = Object.values(TwManager.patterns);
             const unknown = [];
             el.classList.forEach(cls => {
-                // If the class matches NONE of our regexes, it's an "Extra"
                 const isKnown = known.some(regex => regex.test(cls));
                 if (!isKnown) unknown.push(cls);
             });
             return unknown.join(' ');
         },
-
-        // 2. Replace old unknown classes with new string
         setUnknown: (el, newString) => {
-            // First, remove currently existing unknown classes to prevent duplicates/ghosts
             const currentUnknowns = TwManager.getUnknown(el).split(/\s+/).filter(c => c);
             currentUnknowns.forEach(c => el.classList.remove(c));
-
-            // Then add the new ones
             const newClasses = newString.split(/\s+/).filter(c => c);
             newClasses.forEach(c => el.classList.add(c));
         }
@@ -303,8 +289,12 @@
         if (el._figma_bound) return; el._figma_bound = true; el.dataset.editable = "true";
         if (el.tagName === 'DIV' && el.innerHTML.trim() === '') el.classList.add('min-w-[50px]', 'min-h-[50px]', 'border', 'border-dashed', 'border-gray-300');
         el.addEventListener('click', (ev) => {
-            ev.stopPropagation(); const menu = document.getElementById('proto-menu'); if (menu) menu.remove();
-            selectedElement = el; OverlayManager.update(); BreadcrumbManager.update();
+            // MENU LOCK: If menu open, block selection switch unless clicking inside menu
+            if (document.getElementById('proto-menu')) return;
+            ev.stopPropagation(); 
+            selectedElement = el; 
+            OverlayManager.update(); 
+            BreadcrumbManager.update();
         });
     }
 
@@ -335,71 +325,41 @@
         }
     }
 
-    function makeEditable(el) {
-        if (el._figma_bound) return; 
-        el._figma_bound = true; 
-        el.dataset.editable = "true";
-        
-        // Add visual hint for empty divs
-        if (el.tagName === 'DIV' && el.innerHTML.trim() === '') {
-            el.classList.add('min-w-[50px]', 'min-h-[50px]', 'border', 'border-dashed', 'border-gray-300');
-        }
-
-        el.addEventListener('click', (ev) => {
-            // LOCK: If the menu exists, DO NOT allow switching selection
-            if (document.getElementById('proto-menu')) {
-                // Optional: You could make the menu shake or flash here to indicate it's modal
-                return;
-            }
-
-            ev.stopPropagation(); 
-            selectedElement = el; 
-            OverlayManager.update(); 
-            BreadcrumbManager.update();
-        });
-    }
-
     // Start
     initializeEnvironment();
     document.addEventListener('mousemove', (e) => { mouseX = e.clientX; mouseY = e.clientY; });
 
-    
-    // --- CONTEXT MENU (With Flex Toggle) ---
+    // --- CONTEXT MENU ---
     document.addEventListener('contextmenu', (e) => {
-        if (!selectedElement) return; 
-        e.preventDefault();
-
-        // 1. Helper: Flyout
+        if (!selectedElement) return; e.preventDefault();
+        
         const createFlyout = (label, children) => {
             const row = document.createElement('div');
-            row.className = "group relative px-3 py-2 hover:bg-blue-50 cursor-default flex justify-between items-center text-gray-700 font-bold text-[11px] border-b border-gray-50 last:border-0";
+            // Added proto-row for CSS targeting
+            row.className = "proto-row group relative px-3 py-2 hover:bg-blue-50 cursor-default flex justify-between items-center text-gray-700 font-bold text-[11px] border-b border-gray-50 last:border-0";
+            // Make row focusable
+            row.tabIndex = 0; 
+            
             const MENU_WIDTH = 140; const FLYOUT_WIDTH = 240; const WINDOW_W = window.innerWidth;
             const openLeft = (e.clientX + MENU_WIDTH + FLYOUT_WIDTH) > WINDOW_W;
             const flyoutPosClass = openLeft ? "right-full mr-1" : "left-full ml-1";
             const arrow = openLeft ? "◀" : "▶";
             row.innerHTML = `<span>${label}</span><span class="text-gray-400 text-[8px]">${arrow}</span>`;
+            
             const flyout = document.createElement('div');
-            flyout.className = `hidden group-hover:block absolute top-0 w-[240px] bg-white border border-gray-200 shadow-xl rounded-lg p-2 z-[50] ${flyoutPosClass}`;
+            // Added proto-flyout for CSS targeting
+            flyout.className = `proto-flyout hidden absolute top-0 w-[240px] bg-white border border-gray-200 shadow-xl rounded-lg p-2 z-[50] ${flyoutPosClass}`;
             children.forEach(c => flyout.appendChild(c)); 
             row.appendChild(flyout); 
             return row;
         };
-
-        // 2. Helper: Checkbox (NEW)
         const createCheckbox = (label, checked, onChange) => {
-            const row = document.createElement('div');
-            row.className = "flex justify-between items-center mb-2 last:mb-0";
-            const lbl = document.createElement('span'); 
-            lbl.className = "text-gray-500 font-medium mr-2"; lbl.innerText = label;
-            const input = document.createElement('input'); 
-            input.type = 'checkbox';
-            input.checked = checked;
+            const row = document.createElement('div'); row.className = "flex justify-between items-center mb-2 last:mb-0";
+            const lbl = document.createElement('span'); lbl.className = "text-gray-500 font-medium mr-2"; lbl.innerText = label;
+            const input = document.createElement('input'); input.type = 'checkbox'; input.checked = checked;
             input.onchange = (e) => onChange(e.target.checked);
-            row.appendChild(lbl); row.appendChild(input);
-            return row;
+            row.appendChild(lbl); row.appendChild(input); return row;
         };
-
-        // 3. Helper: Select/Input Control
         const createControl = (label, category, type = 'text', options = []) => {
             const row = document.createElement('div'); row.className = "flex justify-between items-center mb-2 last:mb-0";
             const lbl = document.createElement('span'); lbl.className = "text-gray-500 font-medium mr-2 w-16 truncate"; lbl.innerText = label;
@@ -416,8 +376,6 @@
             }
             row.appendChild(lbl); row.appendChild(input); return row;
         };
-
-        // 4. Helper: Quad Input
         const createQuad = (label, categories) => {
             const row = document.createElement('div'); row.className = "flex flex-col mb-2 last:mb-0";
             const header = document.createElement('div'); header.className = "flex justify-between mb-1";
@@ -433,8 +391,6 @@
             row.appendChild(grid); return row;
         };
 
-
-        // --- BUILD MENU ---
         const items = []; const tag = selectedElement.tagName;
         const title = document.createElement('div'); title.innerText = `<${tag.toLowerCase()}>`; 
         title.className = "px-3 py-2 bg-gray-800 text-white font-mono font-bold text-center uppercase tracking-widest text-[10px] rounded-t-md"; items.push(title);
@@ -458,24 +414,13 @@
         layoutControls.push(createControl('Width', 'width')); layoutControls.push(createControl('Height', 'height'));
         layoutControls.push(createControl('Pad (All)', 'padding')); layoutControls.push(createQuad('Padding Sides', ['pt', 'pr', 'pb', 'pl']));
         layoutControls.push(createControl('Marg (All)', 'margin')); layoutControls.push(createQuad('Margin Sides', ['mt', 'mr', 'mb', 'ml']));
-        
         if (tag === 'DIV') {
-            const div = document.createElement('div'); 
-            div.className = "mt-3 mb-2 text-[9px] text-gray-400 font-bold uppercase border-t border-gray-100 pt-2"; div.innerText = "Flexbox"; 
-            layoutControls.push(div);
-            
-            // FLEX CHECKBOX
+            const div = document.createElement('div'); div.className = "mt-3 mb-2 text-[9px] text-gray-400 font-bold uppercase border-t border-gray-100 pt-2"; div.innerText = "Flexbox"; layoutControls.push(div);
             const isFlex = selectedElement.classList.contains('flex');
             layoutControls.push(createCheckbox('Enable Flex Mode', isFlex, (checked) => {
-                HistoryManager.pushState();
-                if(checked) selectedElement.classList.add('flex');
-                else selectedElement.classList.remove('flex');
-                OverlayManager.update();
+                HistoryManager.pushState(); if(checked) selectedElement.classList.add('flex'); else selectedElement.classList.remove('flex'); OverlayManager.update();
             }));
-
-            layoutControls.push(createControl('Direction', 'flexDir', 'select', OPTIONS.flexDir));
-            layoutControls.push(createControl('Justify', 'justify', 'select', OPTIONS.justify));
-            layoutControls.push(createControl('Align', 'items', 'select', OPTIONS.items));
+            layoutControls.push(createControl('Direction', 'flexDir', 'select', OPTIONS.flexDir)); layoutControls.push(createControl('Justify', 'justify', 'select', OPTIONS.justify)); layoutControls.push(createControl('Align', 'items', 'select', OPTIONS.items));
         }
         items.push(createFlyout("Dimensions & Layout", layoutControls));
 
@@ -488,33 +433,13 @@
         }
         items.push(createFlyout("Appearance", appearanceControls));
 
-        
-        // ... (Keep existing sections: Text, Dimensions, Appearance) ...
-
-        // 4. EXTRAS FLYOUT (The "Escape Hatch")
         const extrasControls = [];
-        const extraDesc = document.createElement('div');
-        extraDesc.className = "text-[9px] text-gray-400 mb-2 leading-tight";
-        extraDesc.innerText = "Custom classes unsupported by the UI (e.g. shadow-xl, opacity-50, hover:...)";
-        extrasControls.push(extraDesc);
-
-        const extraArea = document.createElement('textarea');
-        extraArea.className = "w-full border border-gray-300 rounded p-1 text-xs font-mono h-16 focus:outline-none focus:border-blue-500 bg-gray-50";
-        extraArea.placeholder = "e.g. shadow-lg opacity-50";
-        // Load unknown classes
+        const extraDesc = document.createElement('div'); extraDesc.className = "text-[9px] text-gray-400 mb-2 leading-tight"; extraDesc.innerText = "Custom classes unsupported by the UI (e.g. shadow-xl, opacity-50, hover:...)"; extrasControls.push(extraDesc);
+        const extraArea = document.createElement('textarea'); extraArea.className = "w-full border border-gray-300 rounded p-1 text-xs font-mono h-16 focus:outline-none focus:border-blue-500 bg-gray-50"; extraArea.placeholder = "e.g. shadow-lg opacity-50";
         extraArea.value = TwManager.getUnknown(selectedElement);
-        
-        // Save on change
-        extraArea.onchange = () => { 
-            HistoryManager.pushState(); 
-            TwManager.setUnknown(selectedElement, extraArea.value); 
-            OverlayManager.update(); 
-        };
+        extraArea.onchange = () => { HistoryManager.pushState(); TwManager.setUnknown(selectedElement, extraArea.value); OverlayManager.update(); };
         extrasControls.push(extraArea);
-        
         items.push(createFlyout("Extras & Custom", extrasControls));
-
-        // ... (Keep Delete Button & Menu Render logic) ...
 
         const delBtn = document.createElement('button'); delBtn.innerText = "Delete Element"; delBtn.className = "w-full text-left px-3 py-2 text-red-600 font-bold hover:bg-red-50 border-t border-gray-100 rounded-b-md text-[11px]";
         delBtn.onclick = () => { if(confirm("Delete?")) { HistoryManager.pushState(); selectedElement.remove(); selectedElement = null; OverlayManager.update(); BreadcrumbManager.update(); document.getElementById('proto-menu').remove(); }};
@@ -525,21 +450,21 @@
         menu.className = `fixed z-[2147483647] bg-white border border-gray-200 shadow-2xl rounded-lg flex flex-col min-w-[140px] font-mono text-xs p-0`;
         menu.style.top = `${e.clientY}px`; menu.style.left = `${e.clientX}px`;
         items.forEach(item => menu.appendChild(item)); document.body.appendChild(menu);
-    });
-    // --- KEY RESET LISTENER (LAG FIX) ---
-    document.addEventListener('keyup', (e) => {
-        if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
-            isReordering = false;
-        }
+        
+        // AUTO FOCUS first item
+        const firstRow = menu.querySelector('.proto-row');
+        if(firstRow) firstRow.focus();
     });
 
-    // --- SHORTCUTS ---
+    document.addEventListener('keyup', (e) => {
+        if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) { isReordering = false; }
+    });
+
+    // --- SHORTCUTS & KEYBOARD NAV ---
     document.addEventListener('keydown', (e) => {
-        // UNDO / REDO
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); if (e.shiftKey) HistoryManager.redo(); else HistoryManager.undo(); }
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') { e.preventDefault(); HistoryManager.redo(); }
         
-        // SAVE SOURCE (Shift+S)
         if (e.shiftKey && e.key === 'S' && !e.ctrlKey && !e.metaKey) {
             e.preventDefault();
             selectedElement = null; OverlayManager.update(); BreadcrumbManager.update(); const menu = document.getElementById('proto-menu'); if (menu) menu.remove();
@@ -547,7 +472,6 @@
             a.download = "project-source.html"; document.body.appendChild(a); a.click(); document.body.removeChild(a);
         }
         
-        // EXPORT CLEAN (Ctrl+Shift+S)
         if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'S') {
             e.preventDefault();
             const clone = document.documentElement.cloneNode(true);
@@ -558,12 +482,10 @@
             clone.querySelectorAll('style').forEach(s => { if(s.id === 'editor-ui-styles' || s.innerText.includes('.proto-handle')) s.remove(); });
             clone.querySelectorAll('.proto-overlay, .proto-handle, #proto-menu, .proto-breadcrumbs').forEach(el => el.remove());
             clone.querySelectorAll('*').forEach(el => el.removeAttribute('data-editable'));
-            
             const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([clone.outerHTML], {type: "text/html"}));
             a.download = "export-clean.html"; document.body.appendChild(a); a.click(); document.body.removeChild(a);
         }
 
-        // CREATE MENU (Shift+A)
         if (e.shiftKey && e.key.toLowerCase() === 'a') {
             const existing = document.getElementById('proto-menu'); if (existing) existing.remove();
             const menu = document.createElement('div'); menu.id = 'proto-menu';
@@ -580,80 +502,97 @@
                 return btn;
             });
             items.forEach(i => menu.appendChild(i)); document.body.appendChild(menu);
+            menu.querySelector('button').focus();
         }
-
-        // ESCAPE (Deselect)
         if (e.key === 'Escape') { const menu = document.getElementById('proto-menu'); if(menu) menu.remove(); selectedElement = null; OverlayManager.update(); BreadcrumbManager.update(); }
         
         // --- ARROW KEYS LOGIC ---
-        if (selectedElement && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
-            e.preventDefault();
-
-            // HELPER: Check if element is a valid user element (not UI, not script)
-            const isValidTarget = (el) => {
-                if (!el) return false;
-                if (el.tagName === 'SCRIPT' || el.tagName === 'STYLE') return false;
-                if (el.id === 'proto-menu' || el.classList.contains('proto-overlay') || 
-                    el.classList.contains('proto-handle') || el.classList.contains('proto-breadcrumbs')) return false;
-                return true;
-            };
-
-            // CASE 1: REORDER / MOVE (Shift + Arrow)
-            if (e.shiftKey) {
-                const k = e.key;
-                if (!isReordering) { HistoryManager.pushState(); isReordering = true; }
-
-                const p = selectedElement.parentNode;
-                const next = selectedElement.nextElementSibling;
-                const prev = selectedElement.previousElementSibling;
-
-                if (k === 'ArrowLeft' && prev) { p.insertBefore(selectedElement, prev); } 
-                else if (k === 'ArrowRight' && next) { p.insertBefore(selectedElement, next.nextElementSibling); }
-                else if (k === 'ArrowUp' && p !== document.body) { p.parentNode.insertBefore(selectedElement, p.nextElementSibling); }
-                else if (k === 'ArrowDown' && next && isValidTarget(next)) {
-                    const voidTags = ['IMG', 'INPUT', 'BR', 'HR', 'META', 'LINK'];
-                    if (!voidTags.includes(next.tagName)) {
-                        next.insertBefore(selectedElement, next.firstChild);
-                    }
-                }
-                OverlayManager.update(); BreadcrumbManager.update();
-            } 
+        if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) {
+            const menu = document.getElementById('proto-menu');
             
-            // CASE 2: TRAVERSE SELECTION (Arrow Only)
-            else {
-                let target = null;
-                const k = e.key;
-
-                if (k === 'ArrowUp') {
-                    // Go to Parent
-                    if (selectedElement.parentElement && selectedElement.parentElement !== document.documentElement) {
-                        target = selectedElement.parentElement;
+            // 1. MENU NAVIGATION (If Menu is Open)
+            if (menu) {
+                e.preventDefault();
+                const active = document.activeElement;
+                
+                // Navigate Main Rows (Up/Down)
+                if (active.classList.contains('proto-row')) {
+                    if (e.key === 'ArrowDown') { const next = active.nextElementSibling; if(next && next.classList.contains('proto-row')) next.focus(); }
+                    if (e.key === 'ArrowUp') { const prev = active.previousElementSibling; if(prev && prev.classList.contains('proto-row')) prev.focus(); }
+                    // Right: Enter Flyout
+                    if (e.key === 'ArrowRight') {
+                        const flyout = active.querySelector('.proto-flyout');
+                        if (flyout) {
+                            const firstInput = flyout.querySelector('input, select, textarea');
+                            if (firstInput) firstInput.focus();
+                        }
                     }
-                } else if (k === 'ArrowDown') {
-                    // Go to First Child
-                    let child = selectedElement.firstElementChild;
-                    while (child && !isValidTarget(child)) { child = child.nextElementSibling; } // Skip invalid children
-                    if (child) target = child;
-                } else if (k === 'ArrowLeft') {
-                    // Go to Previous Sibling
-                    let prev = selectedElement.previousElementSibling;
-                    while (prev && !isValidTarget(prev)) { prev = prev.previousElementSibling; } // Skip invalid siblings
-                    if (prev) target = prev;
-                } else if (k === 'ArrowRight') {
-                    // Go to Next Sibling
-                    let next = selectedElement.nextElementSibling;
-                    while (next && !isValidTarget(next)) { next = next.nextElementSibling; } // Skip invalid siblings
-                    if (next) target = next;
+                } 
+                // Navigate Inputs inside Flyout
+                else if (active.closest('.proto-flyout')) {
+                    const flyout = active.closest('.proto-flyout');
+                    const inputs = Array.from(flyout.querySelectorAll('input, select, textarea'));
+                    const idx = inputs.indexOf(active);
+                    
+                    if (e.key === 'ArrowDown' && idx < inputs.length - 1) inputs[idx + 1].focus();
+                    if (e.key === 'ArrowUp' && idx > 0) inputs[idx - 1].focus();
+                    // Left: Exit Flyout
+                    if (e.key === 'ArrowLeft') {
+                        const row = flyout.closest('.proto-row');
+                        if (row) row.focus();
+                    }
                 }
+                return; // STOP EXECUTION HERE if menu was open
+            }
 
-                if (target) {
-                    // Select the new target
-                    const menu = document.getElementById('proto-menu'); if (menu) menu.remove();
-                    selectedElement = target;
-                    // Ensure the new target is initialized
-                    makeEditable(selectedElement);
-                    OverlayManager.update();
-                    BreadcrumbManager.update();
+            // 2. DOM MANIPULATION (Only if Menu is Closed)
+            if (selectedElement) {
+                e.preventDefault();
+                const isValidTarget = (el) => {
+                    if (!el) return false;
+                    if (el.tagName === 'SCRIPT' || el.tagName === 'STYLE') return false;
+                    if (el.id === 'proto-menu' || el.classList.contains('proto-overlay') || el.classList.contains('proto-handle') || el.classList.contains('proto-breadcrumbs')) return false;
+                    return true;
+                };
+
+                if (e.shiftKey) {
+                    const k = e.key;
+                    if (!isReordering) { HistoryManager.pushState(); isReordering = true; }
+                    const p = selectedElement.parentNode;
+                    const next = selectedElement.nextElementSibling;
+                    const prev = selectedElement.previousElementSibling;
+                    if (k === 'ArrowLeft' && prev) { p.insertBefore(selectedElement, prev); } 
+                    else if (k === 'ArrowRight' && next) { p.insertBefore(selectedElement, next.nextElementSibling); }
+                    else if (k === 'ArrowUp' && p !== document.body) { p.parentNode.insertBefore(selectedElement, p.nextElementSibling); }
+                    else if (k === 'ArrowDown' && next && isValidTarget(next)) {
+                        const voidTags = ['IMG', 'INPUT', 'BR', 'HR', 'META', 'LINK'];
+                        if (!voidTags.includes(next.tagName)) { next.insertBefore(selectedElement, next.firstChild); }
+                    }
+                    OverlayManager.update(); BreadcrumbManager.update();
+                } 
+                else {
+                    let target = null;
+                    const k = e.key;
+                    if (k === 'ArrowUp') {
+                        if (selectedElement.parentElement && selectedElement.parentElement !== document.documentElement) target = selectedElement.parentElement;
+                    } else if (k === 'ArrowDown') {
+                        let child = selectedElement.firstElementChild;
+                        while (child && !isValidTarget(child)) { child = child.nextElementSibling; }
+                        if (child) target = child;
+                    } else if (k === 'ArrowLeft') {
+                        let prev = selectedElement.previousElementSibling;
+                        while (prev && !isValidTarget(prev)) { prev = prev.previousElementSibling; }
+                        if (prev) target = prev;
+                    } else if (k === 'ArrowRight') {
+                        let next = selectedElement.nextElementSibling;
+                        while (next && !isValidTarget(next)) { next = next.nextElementSibling; }
+                        if (next) target = next;
+                    }
+                    if (target) {
+                        selectedElement = target;
+                        makeEditable(selectedElement);
+                        OverlayManager.update(); BreadcrumbManager.update();
+                    }
                 }
             }
         }
