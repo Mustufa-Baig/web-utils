@@ -29,9 +29,8 @@
         .proto-input:focus { outline: none; border-color: #3b82f6; background: white; }
         
         /* Menu & Accessibility */
-        /* Show flyout on Hover OR Focus (Keyboard support) */
-        .proto-row:hover .proto-flyout,
-        .proto-row:focus-within .proto-flyout { display: block; }
+        /* Show flyout explicitly via JS class to prevent mouse/keyboard overlap */
+        .proto-row.is-expanded .proto-flyout { display: block !important; }
         .proto-row:focus { outline: 2px solid #3b82f6; outline-offset: -2px; background-color: #eff6ff; }
 
         .proto-breadcrumbs {
@@ -335,11 +334,10 @@
     document.addEventListener('contextmenu', (e) => {
         if (!selectedElement) return; e.preventDefault();
         
+        // 1. Helper: Flyout
         const createFlyout = (label, children) => {
             const row = document.createElement('div');
-            // Added proto-row for CSS targeting
             row.className = "proto-row group relative px-3 py-2 hover:bg-blue-50 cursor-default flex justify-between items-center text-gray-700 font-bold text-[11px] border-b border-gray-50 last:border-0";
-            // Make row focusable
             row.tabIndex = 0; 
             
             const MENU_WIDTH = 140; const FLYOUT_WIDTH = 240; const WINDOW_W = window.innerWidth;
@@ -349,12 +347,36 @@
             row.innerHTML = `<span>${label}</span><span class="text-gray-400 text-[8px]">${arrow}</span>`;
             
             const flyout = document.createElement('div');
-            // Added proto-flyout for CSS targeting
             flyout.className = `proto-flyout hidden absolute top-0 w-[240px] bg-white border border-gray-200 shadow-xl rounded-lg p-2 z-[50] ${flyoutPosClass}`;
             children.forEach(c => flyout.appendChild(c)); 
             row.appendChild(flyout); 
+
+            // --- BUG FIX: Unified Expansion Logic ---
+            const expandFlyout = (ev) => {
+                const activeTag = document.activeElement ? document.activeElement.tagName : '';
+                const isTyping = ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeTag);
+                
+                // Safety: If mouse hovers over a new row, but the user is actively typing 
+                // in a different row's input, do NOT steal the menu focus.
+                if (ev.type === 'mouseenter' && isTyping && !row.contains(document.activeElement)) {
+                    return; 
+                }
+
+                const menu = document.getElementById('proto-menu');
+                if (menu) {
+                    // Close all other flyouts
+                    menu.querySelectorAll('.proto-row').forEach(r => r.classList.remove('is-expanded'));
+                }
+                // Open this flyout
+                row.classList.add('is-expanded');
+            };
+
+            // Bind both mouse and keyboard focus to the exact same logic
+            row.addEventListener('mouseenter', expandFlyout);
+            row.addEventListener('focusin', expandFlyout);
+
             return row;
-        };
+        };;
         const createCheckbox = (label, checked, onChange) => {
             const row = document.createElement('div'); row.className = "flex justify-between items-center mb-2 last:mb-0";
             const lbl = document.createElement('span'); lbl.className = "text-gray-500 font-medium mr-2"; lbl.innerText = label;
@@ -470,7 +492,7 @@
         styleControls.push(pasteBtn);
         
         items.push(createFlyout("Style Transfer", styleControls));
-        
+
         const delBtn = document.createElement('button'); delBtn.innerText = "Delete Element"; delBtn.className = "w-full text-left px-3 py-2 text-red-600 font-bold hover:bg-red-50 border-t border-gray-100 rounded-b-md text-[11px]";
         delBtn.onclick = () => { if(confirm("Delete?")) { HistoryManager.pushState(); selectedElement.remove(); selectedElement = null; OverlayManager.update(); BreadcrumbManager.update(); document.getElementById('proto-menu').remove(); }};
         items.push(delBtn);
