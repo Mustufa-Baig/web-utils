@@ -67,6 +67,7 @@
     let mouseX = 0, mouseY = 0;
     let isReordering = false;
     let clipboardElement = null;
+    let clipboardStyles = "";
 
     // --- MANAGERS ---
 
@@ -442,6 +443,34 @@
         extrasControls.push(extraArea);
         items.push(createFlyout("Extras & Custom", extrasControls));
 
+        // STYLE TRANSFER FLYOUT
+        const styleControls = [];
+        const copyBtn = document.createElement('button'); 
+        copyBtn.innerText = "Copy Styles"; 
+        copyBtn.className = "w-full text-left px-2 py-1 mb-1 bg-gray-50 hover:bg-blue-50 rounded text-gray-700 font-bold transition-colors border border-gray-200";
+        copyBtn.onclick = (e) => { 
+            e.stopPropagation(); // Keep menu open
+            clipboardStyles = selectedElement.className; 
+            copyBtn.innerText = "Copied!";
+            setTimeout(() => copyBtn.innerText = "Copy Styles", 1000);
+        }; 
+        styleControls.push(copyBtn);
+        
+        const pasteBtn = document.createElement('button'); 
+        pasteBtn.innerText = "Paste Styles"; 
+        pasteBtn.className = "w-full text-left px-2 py-1 bg-gray-50 hover:bg-blue-50 rounded text-gray-700 font-bold transition-colors border border-gray-200";
+        pasteBtn.onclick = () => { 
+            if (clipboardStyles) { 
+                HistoryManager.pushState(); 
+                selectedElement.className = clipboardStyles; 
+                OverlayManager.update(); 
+                BreadcrumbManager.update(); 
+            }
+        }; 
+        styleControls.push(pasteBtn);
+        
+        items.push(createFlyout("Style Transfer", styleControls));
+        
         const delBtn = document.createElement('button'); delBtn.innerText = "Delete Element"; delBtn.className = "w-full text-left px-3 py-2 text-red-600 font-bold hover:bg-red-50 border-t border-gray-100 rounded-b-md text-[11px]";
         delBtn.onclick = () => { if(confirm("Delete?")) { HistoryManager.pushState(); selectedElement.remove(); selectedElement = null; OverlayManager.update(); BreadcrumbManager.update(); document.getElementById('proto-menu').remove(); }};
         items.push(delBtn);
