@@ -583,23 +583,63 @@
             a.download = "export-clean.html"; document.body.appendChild(a); a.click(); document.body.removeChild(a);
         }
 
-        if (e.shiftKey && e.key.toLowerCase() === 'a') {
+        // CREATE MENU (Shift+A)
+        if (e.shiftKey && e.key.toLowerCase() === 'a' && !isTyping) {
+            e.preventDefault();
             const existing = document.getElementById('proto-menu'); if (existing) existing.remove();
             const menu = document.createElement('div'); menu.id = 'proto-menu';
             menu.className = `fixed z-[2147483647] bg-white border border-gray-200 shadow-2xl rounded-lg flex flex-col min-w-[140px] font-mono text-xs p-0`;
             menu.style.top = `${mouseY}px`; menu.style.left = `${mouseX}px`;
-            const items = ['div', 'text', 'img'].map(opt => {
-                const btn = document.createElement('button'); btn.innerText = opt.toUpperCase();
-                btn.className = "w-full text-left px-3 py-2 hover:bg-blue-50 hover:text-blue-600 rounded text-gray-700 font-bold transition-colors";
-                btn.onclick = () => { 
-                    HistoryManager.pushState();
-                    let newEl; if (opt === 'div') { newEl = document.createElement('div'); newEl.className = "min-w-[150px] min-h-[150px] bg-gray-100 border-2 border-dashed border-gray-300 p-4 m-2 flex flex-col"; } else if (opt === 'text') { newEl = document.createElement('h1'); newEl.innerText = "New Heading"; newEl.className = "text-4xl font-bold text-gray-800 m-2"; } else if (opt === 'img') { newEl = document.createElement('img'); newEl.src = "https://via.placeholder.com/150"; newEl.className = "w-[150px] h-auto m-2"; } 
-                    makeEditable(newEl); (selectedElement || document.body).appendChild(newEl); document.getElementById('proto-menu').remove(); selectedElement = newEl; OverlayManager.update(); BreadcrumbManager.update();
+
+            const createAddFlyout = (label, items) => {
+                const row = document.createElement('div');
+                row.className = "proto-row group relative px-3 py-2 hover:bg-blue-50 cursor-default flex justify-between items-center text-gray-700 font-bold text-[11px] border-b border-gray-50 last:border-0";
+                row.tabIndex = 0; 
+                
+                const MENU_WIDTH = 140; const FLYOUT_WIDTH = 140; const WINDOW_W = window.innerWidth;
+                const openLeft = (mouseX + MENU_WIDTH + FLYOUT_WIDTH) > WINDOW_W;
+                const flyoutPosClass = openLeft ? "right-full mr-1" : "left-full ml-1";
+                row.innerHTML = `<span>${label}</span><span class="text-gray-400 text-[8px]">${openLeft ? "◀" : "▶"}</span>`;
+                
+                const flyout = document.createElement('div');
+                flyout.className = `proto-flyout hidden absolute top-0 w-[140px] bg-white border border-gray-200 shadow-xl rounded-lg p-0 z-[50] ${flyoutPosClass} flex flex-col overflow-hidden`;
+                
+                items.forEach(opt => {
+                    const btn = document.createElement('button'); btn.innerText = opt.label;
+                    btn.className = "w-full text-left px-3 py-2 hover:bg-blue-50 hover:text-blue-600 text-gray-700 font-bold transition-colors border-b border-gray-50 last:border-0";
+                    btn.onclick = (ev) => { 
+                        ev.stopPropagation(); HistoryManager.pushState(); let newEl; 
+                        if (opt.id === 'div') { newEl = document.createElement('div'); newEl.className = "min-w-[150px] min-h-[150px] bg-gray-100 border-2 border-dashed border-gray-300 p-4 m-2 flex flex-col"; } 
+                        else if (opt.id === 'heading') { newEl = document.createElement('h1'); newEl.innerText = "New Heading"; newEl.className = "text-4xl font-bold text-gray-800 m-2"; } 
+                        else if (opt.id === 'img') { newEl = document.createElement('img'); newEl.src = "https://via.placeholder.com/150"; newEl.className = "w-[150px] h-auto m-2"; } 
+                        makeEditable(newEl); (selectedElement || document.body).appendChild(newEl); 
+                        document.getElementById('proto-menu').remove(); selectedElement = newEl; OverlayManager.update(); BreadcrumbManager.update();
+                    };
+                    flyout.appendChild(btn);
+                });
+                row.appendChild(flyout);
+
+                const expandFlyout = (ev) => {
+                    const activeTag = document.activeElement ? document.activeElement.tagName : '';
+                    const isTyping = ['INPUT', 'TEXTAREA', 'SELECT'].includes(activeTag);
+                    if (ev.type === 'mouseenter' && isTyping && !row.contains(document.activeElement)) return; 
+                    const m = document.getElementById('proto-menu');
+                    if (m) m.querySelectorAll('.proto-row').forEach(r => r.classList.remove('is-expanded'));
+                    row.classList.add('is-expanded');
                 };
-                return btn;
-            });
-            items.forEach(i => menu.appendChild(i)); document.body.appendChild(menu);
-            menu.querySelector('button').focus();
+
+                row.addEventListener('mouseenter', expandFlyout);
+                row.addEventListener('focusin', expandFlyout);
+                return row;
+            };
+
+            menu.appendChild(createAddFlyout("Container", [{ label: "DIV", id: "div" }]));
+            menu.appendChild(createAddFlyout("Text", [{ label: "HEADING", id: "heading" }]));
+            menu.appendChild(createAddFlyout("Visual", [{ label: "IMAGE", id: "img" }]));
+            
+            document.body.appendChild(menu);
+            const firstRow = menu.querySelector('.proto-row');
+            if (firstRow) firstRow.focus();
         }
         if (e.key === 'Escape') { const menu = document.getElementById('proto-menu'); if(menu) menu.remove(); selectedElement = null; OverlayManager.update(); BreadcrumbManager.update(); }
         
@@ -620,7 +660,7 @@
                     if (e.key === 'ArrowRight') {
                         const flyout = active.querySelector('.proto-flyout');
                         if (flyout) {
-                            const firstInput = flyout.querySelector('input, select, textarea');
+                            const firstInput = flyout.querySelector('input, select, textarea, button');
                             if (firstInput) firstInput.focus();
                         }
                     }
@@ -628,7 +668,7 @@
                 // Navigate Inputs inside Flyout
                 else if (active.closest('.proto-flyout')) {
                     const flyout = active.closest('.proto-flyout');
-                    const inputs = Array.from(flyout.querySelectorAll('input, select, textarea'));
+                    const inputs = Array.from(flyout.querySelectorAll('input, select, textarea, button'));
                     const idx = inputs.indexOf(active);
                     
                     if (e.key === 'ArrowDown' && idx < inputs.length - 1) inputs[idx + 1].focus();
