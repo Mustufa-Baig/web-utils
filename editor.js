@@ -419,8 +419,33 @@
         const title = document.createElement('div'); title.innerText = `<${tag.toLowerCase()}>`; 
         title.className = "px-3 py-2 bg-gray-800 text-white font-mono font-bold text-center uppercase tracking-widest text-[10px] rounded-t-md"; items.push(title);
 
-        if (['H1', 'P', 'SPAN', 'BUTTON', 'A'].includes(tag)) {
+        const isTextElement = ['H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'P', 'SPAN', 'BUTTON', 'A'].includes(tag);
+        if (isTextElement) {
             const controls = [];
+            
+            // --- NEW: HEADING LEVEL SWITCHER ---
+            if (/^H[1-6]$/.test(tag)) {
+                const row = document.createElement('div'); row.className = "flex justify-between items-center mb-2 last:mb-0";
+                const lbl = document.createElement('span'); lbl.className = "text-gray-500 font-medium mr-2 w-16 truncate"; lbl.innerText = "Tag";
+                const input = document.createElement('select'); input.className = "proto-input flex-1 bg-blue-50 font-bold border-blue-200";
+                ['H1', 'H2', 'H3', 'H4', 'H5', 'H6'].forEach(opt => { const o = document.createElement('option'); o.value = opt; o.innerText = opt; input.appendChild(o); });
+                input.value = tag; 
+                input.onchange = () => { 
+                    HistoryManager.pushState(); 
+                    const newEl = document.createElement(input.value);
+                    newEl.innerHTML = selectedElement.innerHTML; 
+                    newEl.className = selectedElement.className; 
+                    if(selectedElement.id) newEl.id = selectedElement.id;
+                    selectedElement.parentNode.replaceChild(newEl, selectedElement); 
+                    makeEditable(newEl);
+                    selectedElement = newEl; 
+                    OverlayManager.update(); BreadcrumbManager.update(); 
+                    // Close menu so the tag header updates properly on next click
+                    document.getElementById('proto-menu').remove(); 
+                };
+                row.appendChild(lbl); row.appendChild(input); controls.push(row);
+            }
+
             const txtArea = document.createElement('textarea');
             txtArea.className = "w-full border border-gray-300 rounded p-1 text-xs mb-2 font-sans h-16 focus:outline-none focus:border-blue-500";
             txtArea.value = selectedElement.innerText;
