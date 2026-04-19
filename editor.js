@@ -609,9 +609,32 @@
                     btn.className = "w-full text-left px-3 py-2 hover:bg-blue-50 hover:text-blue-600 text-gray-700 font-bold transition-colors border-b border-gray-50 last:border-0";
                     btn.onclick = (ev) => { 
                         ev.stopPropagation(); HistoryManager.pushState(); let newEl; 
-                        if (opt.id === 'div') { newEl = document.createElement('div'); newEl.className = "min-w-[150px] min-h-[150px] bg-gray-100 border-2 border-dashed border-gray-300 p-4 m-2 flex flex-col"; } 
-                        else if (opt.id === 'heading') { newEl = document.createElement('h1'); newEl.innerText = "New Heading"; newEl.className = "text-4xl font-bold text-gray-800 m-2"; } 
-                        else if (opt.id === 'img') { newEl = document.createElement('img'); newEl.src = "https://via.placeholder.com/150"; newEl.className = "w-[150px] h-auto m-2"; } 
+                        
+                        // --- ELEMENT CREATION LOGIC ---
+                        if (opt.id === 'div') { 
+                            newEl = document.createElement('div'); 
+                            newEl.className = "min-w-[150px] min-h-[150px] bg-gray-100 border-2 border-dashed border-gray-300 p-4 m-2 flex flex-col"; 
+                        } 
+                        else if (opt.id === 'section') { 
+                            newEl = document.createElement('section'); 
+                            newEl.className = "w-full min-h-[200px] p-8 m-2 bg-white border border-gray-200 flex flex-col"; 
+                        }
+                        else if (opt.id === 'heading') { 
+                            newEl = document.createElement('h1'); 
+                            newEl.innerText = "New Heading"; 
+                            newEl.className = "text-4xl font-bold text-gray-800 m-2"; 
+                        } 
+                        else if (opt.id === 'paragraph') { 
+                            newEl = document.createElement('p'); 
+                            newEl.innerText = "This is a new paragraph. You can edit this text to add your own content."; 
+                            newEl.className = "text-base text-gray-600 m-2 leading-relaxed"; 
+                        }
+                        else if (opt.id === 'img') { 
+                            newEl = document.createElement('img'); 
+                            newEl.src = "https://via.placeholder.com/150"; 
+                            newEl.className = "w-[150px] h-auto m-2"; 
+                        } 
+                        
                         makeEditable(newEl); (selectedElement || document.body).appendChild(newEl); 
                         document.getElementById('proto-menu').remove(); selectedElement = newEl; OverlayManager.update(); BreadcrumbManager.update();
                     };
@@ -633,9 +656,18 @@
                 return row;
             };
 
-            menu.appendChild(createAddFlyout("Container", [{ label: "DIV", id: "div" }]));
-            menu.appendChild(createAddFlyout("Text", [{ label: "HEADING", id: "heading" }]));
-            menu.appendChild(createAddFlyout("Visual", [{ label: "IMAGE", id: "img" }]));
+            // --- MENU STRUCTURE ---
+            menu.appendChild(createAddFlyout("Container", [
+                { label: "DIV", id: "div" },
+                { label: "SECTION", id: "section" }
+            ]));
+            menu.appendChild(createAddFlyout("Text", [
+                { label: "HEADING", id: "heading" },
+                { label: "PARAGRAPH", id: "paragraph" }
+            ]));
+            menu.appendChild(createAddFlyout("Visual", [
+                { label: "IMAGE", id: "img" }
+            ]));
             
             document.body.appendChild(menu);
             const firstRow = menu.querySelector('.proto-row');
