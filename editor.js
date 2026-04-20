@@ -252,6 +252,9 @@
 
             menu.appendChild(el('div', { className: "px-3 py-2 bg-gray-800 text-white font-mono font-bold text-center uppercase tracking-widest text-[10px] rounded-t-md", innerText: `<${tag.toLowerCase()}>` }));
 
+            // NEW: Helper to generate dropdown options safely
+            const buildOptions = (arr) => [{v: '', t: '-'}, ...arr.map(o => ({v: o, t: o}))].map(opt => el('option', {value: opt.v, innerText: opt.t}));
+
             // 1. Text Controls
             if (['H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'P', 'SPAN', 'BUTTON', 'A'].includes(tag)) {
                 const controls = [];
@@ -263,15 +266,16 @@
                     controls.push(MenuManager.createInputRow('Tag', sel));
                 }
                 controls.push(el('textarea', { className: "w-full border border-gray-300 rounded p-1 text-xs mb-2 font-sans h-16 focus:outline-none focus:border-blue-500", value: selectedElement.innerText, onchange: (ev) => { HistoryManager.pushState(); selectedElement.innerText = ev.target.value; }}));
+                
                 ['fontFamily', 'fontWeight', 'textSize', 'textAlign'].forEach(cat => {
-                    const sel = el('select', { className: "proto-input flex-1", value: TwManager.getValue(selectedElement, cat), onchange: (ev) => { HistoryManager.pushState(); TwManager.update(selectedElement, cat, ev.target.value); }}, [['', '-']].concat(OPTIONS[cat]).map(opt => el('option', {value: opt[0]||opt, innerText: opt[1]||opt})));
+                    const sel = el('select', { className: "proto-input flex-1", value: TwManager.getValue(selectedElement, cat), onchange: (ev) => { HistoryManager.pushState(); TwManager.update(selectedElement, cat, ev.target.value); }}, buildOptions(OPTIONS[cat]));
                     controls.push(MenuManager.createInputRow(cat.replace('text','').replace('font',''), sel));
                 });
                 controls.push(MenuManager.createInputRow('Color', el('input', { type: 'text', className: "proto-input flex-1", value: TwManager.getValue(selectedElement, 'textColor'), onchange: (ev) => { HistoryManager.pushState(); TwManager.update(selectedElement, 'textColor', ev.target.value); }})));
                 menu.appendChild(MenuManager.createFlyoutRow("Text & Content", [el('div', {className: 'w-[240px] flex flex-col'}, controls)], openLeft));
             }
 
-            // 2. Dimensions & Layout (RESTORED)
+            // 2. Dimensions & Layout
             const layoutControls = [];
             ['width', 'height', 'padding', 'margin'].forEach(cat => {
                 layoutControls.push(MenuManager.createInputRow(cat.charAt(0).toUpperCase() + cat.slice(1), el('input', { type: 'text', className: "proto-input flex-1", value: TwManager.getValue(selectedElement, cat), onchange: (ev) => { HistoryManager.pushState(); TwManager.update(selectedElement, cat, ev.target.value); OverlayManager.update(); } })));
@@ -287,18 +291,18 @@
                     el('input', { type: 'checkbox', checked: isFlex, onchange: (ev) => { HistoryManager.pushState(); if(ev.target.checked) selectedElement.classList.add('flex'); else selectedElement.classList.remove('flex'); OverlayManager.update(); } })
                 ]));
                 ['flexDir', 'justify', 'items'].forEach(cat => {
-                    const sel = el('select', { className: "proto-input flex-1", value: TwManager.getValue(selectedElement, cat), onchange: (ev) => { HistoryManager.pushState(); TwManager.update(selectedElement, cat, ev.target.value); }}, [['', '-']].concat(OPTIONS[cat]).map(opt => el('option', {value: opt[0]||opt, innerText: opt[1]||opt})));
+                    const sel = el('select', { className: "proto-input flex-1", value: TwManager.getValue(selectedElement, cat), onchange: (ev) => { HistoryManager.pushState(); TwManager.update(selectedElement, cat, ev.target.value); }}, buildOptions(OPTIONS[cat]));
                     layoutControls.push(MenuManager.createInputRow(cat, sel));
                 });
             }
             menu.appendChild(MenuManager.createFlyoutRow("Dimensions & Layout", [el('div', {className: 'w-[240px] flex flex-col'}, layoutControls)], openLeft));
 
-            // 3. Appearance (RESTORED)
+            // 3. Appearance
             const appearanceControls = [];
             ['bgColor', 'borderWidth', 'rounded'].forEach(cat => {
                 let inputEl;
                 if (OPTIONS[cat]) {
-                    inputEl = el('select', { className: "proto-input flex-1", value: TwManager.getValue(selectedElement, cat), onchange: (ev) => { HistoryManager.pushState(); TwManager.update(selectedElement, cat, ev.target.value); }}, [['', '-']].concat(OPTIONS[cat]).map(opt => el('option', {value: opt[0]||opt, innerText: opt[1]||opt})));
+                    inputEl = el('select', { className: "proto-input flex-1", value: TwManager.getValue(selectedElement, cat), onchange: (ev) => { HistoryManager.pushState(); TwManager.update(selectedElement, cat, ev.target.value); }}, buildOptions(OPTIONS[cat]));
                 } else {
                     inputEl = el('input', { type: 'text', className: "proto-input flex-1", value: TwManager.getValue(selectedElement, cat), onchange: (ev) => { HistoryManager.pushState(); TwManager.update(selectedElement, cat, ev.target.value); }});
                 }
